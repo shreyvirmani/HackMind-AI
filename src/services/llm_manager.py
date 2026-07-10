@@ -1,10 +1,13 @@
-from src.config.settings import settings
+import time
+
+from src.models.llm_request import LLMRequest
 from src.models.llm_response import LLMResponse
+
 from src.services.cache import cache
-from src.services.circuit_breaker import circuit_breaker
 from src.services.gemini_client import GeminiClient
 from src.services.rate_limiter import rate_limiter
 from src.services.telemetry import telemetry
+
 from src.utils.logger import logger
 
 
@@ -14,26 +17,18 @@ class LLMManager:
 
         self.client = GeminiClient()
 
-        self.models = [
-            settings.PRIMARY_MODEL,
-            settings.SECONDARY_MODEL,
-            settings.TERTIARY_MODEL,
-        ]
-
     def generate(
         self,
-        prompt: str,
-        priority: str = "medium",
-        cache_enabled: bool = True,
+        request: LLMRequest,
     ) -> LLMResponse:
 
         telemetry.increment("total_requests")
 
-        # Check Cache
+        # ---------------- Cache ---------------- #
 
-        if cache_enabled:
+        if request.cache_enabled:
 
-            cached = cache.get(prompt)
+            cached = cache.get(request.prompt)
 
             if cached is not None:
 
@@ -53,14 +48,31 @@ class LLMManager:
 
         logger.info("Cache MISS")
 
-        # Remaining implementation will be added
+        # --------------- API Call --------------- #
+
+        rate_limiter.wait()
+
+        start = time.perf_counter()
+
+        response = self.client.generate(
+            prompt=request.prompt,
+            model=request.preferred_model or "gemini-2.5-flash",
+        )
+
+        elapsed = round(time.perf_counter() - start, 3)
+
+        telemetry.increment("successful_requests")
+        telemetry.add_response_time(elapsed)
+
+        if request.cache_enabled:
+            cache.set(request.prompt, response)
 
         return LLMResponse(
-            content="",
-            model="",
+            content=response,
+            model=request.preferred_model or "gemini-2.5-flash",
             cached=False,
             retries=0,
-            response_time=0.0,
+            response_time=elapsed,
         )
 
 
