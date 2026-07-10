@@ -35,15 +35,21 @@ HackMind AI helps transform a simple hackathon idea into a complete project road
 
 > ![alt text](assets/screenshots/generating.png)
 
-### Generated Roadmap
+### Generated Roadmap (overview)
 
-> *(Add screenshot here)*
+> ![alt text](<assets/screenshots/Generating Roadmap(overview).png>)
 
-```
-assets/screenshots/roadmap.png
-```
+## Tech Stack
 
----
+> ![alt text](assets/screenshots/techstack.png)
+
+## Development Timelines
+
+> ![alt text](<assets/screenshots/developmet timelines.png>)
+
+## Team Roles and Future Scope
+
+> ![alt text](<assets/screenshots/team roles and future scope.png>)
 
 ## 🏗️ Architecture
 
@@ -240,4 +246,4 @@ streamlit run app.py
 
 GitHub: https://github.com/shreyvirmani
 
-LinkedIn: https://www.linkedin.com/in/YOUR-LINKEDIN-USERNAME/
+LinkedIn: https://www.linkedin.com/in/shrey-virmani-1a352a325/
