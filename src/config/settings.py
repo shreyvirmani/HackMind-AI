@@ -1,9 +1,3 @@
-"""
-Application configuration.
-
-Loads all environment variables from the .env file
-and exposes them through a single Settings object.
-"""
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
