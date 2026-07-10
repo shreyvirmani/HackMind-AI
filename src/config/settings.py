@@ -13,10 +13,19 @@ load_dotenv()
 
 
 class Settings(BaseSettings):
-    """Application settings."""
 
     GOOGLE_API_KEY: str
-    MODEL_NAME: str = "gemini-2.5-flash"
+
+    PRIMARY_MODEL: str
+    SECONDARY_MODEL: str
+    TERTIARY_MODEL: str
+
+    MAX_RETRIES: int = 3
+    REQUEST_DELAY: int = 2
+
+    CACHE_ENABLED: bool = True
+
+    LOG_LEVEL: str = "INFO"
 
     DATABASE_URL: str
 
