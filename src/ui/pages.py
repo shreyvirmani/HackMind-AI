@@ -1,8 +1,8 @@
-import json
 import streamlit as st
 
 from src.controllers.planner_controller import planner_controller
-
+from src.exceptions.llm_exceptions import InvalidResponseError
+from src.ui.components import metric_card
 
 def planner_page():
 
@@ -25,78 +25,204 @@ def planner_page():
 
         with st.spinner("Generating roadmap..."):
 
-            roadmap = planner_controller.generate_plan(idea)
+            try:
+                roadmap = planner_controller.generate_plan(idea)
 
-        try:
-            roadmap = json.loads(roadmap)
+            except InvalidResponseError  as e:
+                st.error(str(e))
+                return
+            
+                st.success(
+                    "✅ AI roadmap generated successfully."
+                )    
 
-        except json.JSONDecodeError:
-            st.error("AI returned an invalid response.")
-            st.code(roadmap)
-            return
+                feature_count = len(roadmap.key_features)
 
-        st.divider()
+                team_count = len(roadmap.team_roles)
 
-        st.title(roadmap["project_title"])
+                phase_count = len(roadmap.development_timeline)
 
-        st.subheader("📌 Problem Statement")
-        st.write(roadmap["problem_statement"])
+                tech_count = (
+                    len(roadmap.tech_stack.frontend)
+                    + len(roadmap.tech_stack.backend)
+                    + len(roadmap.tech_stack.ai_ml)
+                    + len(roadmap.tech_stack.database)
+                    + len(roadmap.tech_stack.deployment)
+                )
 
-        st.subheader("💡 Solution")
-        st.write(roadmap["solution"])
+                st.markdown(
+                    f"""
+                    <div style="
+                        padding:32px;
+                        border-radius:20px;
+                        background:linear-gradient(135deg,#2563eb,#7c3aed);
+                        color:white;
+                        margin-bottom:25px;
+                    ">
+                        <h1 style="margin:0;">
+                            🚀 {roadmap.project_title}
+                        </h1>
 
-        st.subheader("✨ Key Features")
+                        <p style="
+                            font-size:18px;
+                            margin-top:15px;
+                            line-height:1.7;
+                            color:#f3f4f6;
+                        ">
+                            {roadmap.solution}
+                        </p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-        for feature in roadmap["key_features"]:
-            st.markdown(f"- {feature}")
+                st.markdown("## 📊 Project Overview")
 
-        st.subheader("⚙️ Tech Stack")
+                col1, col2, col3, col4 = st.columns(4)
 
-        tech = roadmap["tech_stack"]
+                with col1:
+                    metric_card(
+                        "Features",
+                        feature_count,
+                        "✨",
+                    )
 
-        col1, col2 = st.columns(2)
+                with col2:
+                    metric_card(
+                        "Team Members",
+                        team_count,
+                        "👥",
+                    )
 
-        with col1:
-            st.markdown("### Frontend")
-            for item in tech["frontend"]:
-                st.write("•", item)
+                with col3:
+                    metric_card(
+                        "Timeline Phases",
+                        phase_count,
+                        "📅",
+                    )
 
-            st.markdown("### Backend")
-            for item in tech["backend"]:
-                st.write("•", item)
+                with col4:
+                    metric_card(
+                        "Technologies",
+                        tech_count,
+                        "⚙️",
+                    )
 
-        with col2:
-            st.markdown("### AI / ML")
-            for item in tech["ai_ml"]:
-                st.write("•", item)
+                st.divider()
 
-            st.markdown("### Database")
-            for item in tech["database"]:
-                st.write("•", item)
+            overview_tab, tech_tab, timeline_tab, team_tab, future_tab = st.tabs(
+                [
+                    "📋 Overview",
+                    "⚙️ Tech Stack",
+                    "📅 Timeline",
+                    "👥 Team",
+                    "🚀 Future Scope",
+                ]
+            )
 
-        st.markdown("### Deployment")
+            # ================= OVERVIEW =================
 
-        for item in tech["deployment"]:
-            st.write("•", item)
+            with overview_tab:
 
-        st.subheader("📅 Development Timeline")
+                st.subheader("📌 Problem Statement")
+                st.write(roadmap.problem_statement)
 
-        for phase in roadmap["development_timeline"]:
+                st.subheader("💡 Solution")
+                st.write(roadmap.solution)
 
-            with st.expander(phase["phase"]):
+                st.subheader("✨ Key Features")
 
-                for task in phase["tasks"]:
+                for feature in roadmap.key_features:
 
-                    st.markdown(f"- {task}")
+                    st.success(feature)
 
-        st.subheader("👨‍💻 Team Roles")
+            # ================= TECH STACK =================
 
-        for role in roadmap["team_roles"]:
+            with tech_tab:
 
-            with st.expander(role["role"]):
+                tech = roadmap.tech_stack
 
-                st.write(role["responsibilities"])
+                c1, c2 = st.columns(2)
 
-        st.subheader("🚀 Future Scope")
+                with c1:
 
-        st.write(roadmap["future_scope"])
+                    with st.container(border=True):
+                        st.markdown("### 🌐 Frontend")
+
+                        for item in tech.frontend:
+                            st.write("•", item)
+
+                    with st.container(border=True):
+                        st.markdown("### ⚙️ Backend")
+
+                        for item in tech.backend:
+                            st.write("•", item)
+
+                    with st.container(border=True):
+                        st.markdown("### 🗄 Database")
+
+                        for item in tech.database:
+                            st.write("•", item)
+
+                with c2:
+
+                    with st.container(border=True):
+                        st.markdown("### 🤖 AI / ML")
+
+                        for item in tech.ai_ml:
+                            st.write("•", item)
+
+                    with st.container(border=True):
+                        st.markdown("### ☁️ Deployment")
+
+                        for item in tech.deployment:
+                            st.write("•", item)
+
+                st.divider()
+
+                with st.container(border=True):
+
+                    st.subheader("🏗️ System Architecture")
+
+                    st.write(roadmap.system_architecture)
+
+            # ================= TIMELINE =================
+
+            with timeline_tab:
+
+                for phase in roadmap.development_timeline:
+
+                    with st.expander(
+                        f"🚩 {phase.phase}",
+                        expanded=False
+                        ):
+
+                        for task in phase.tasks:
+
+                            st.markdown(f"✅ {task}")
+
+            # ================= TEAM =================
+
+            with team_tab:
+
+                cols = st.columns(2)
+
+                for index, member in enumerate(roadmap.team_roles):
+
+                    with cols[index % 2]:
+
+                        with st.container(border=True):
+
+                            st.markdown(f"### 👨‍💻 {member.role}")
+
+                            st.caption(member.responsibilities)
+
+            # ================= FUTURE =================
+
+            with future_tab:
+
+                with st.container(border=True):
+
+                    st.subheader("🚀 Future Scope")
+
+                    st.write(roadmap.future_scope)

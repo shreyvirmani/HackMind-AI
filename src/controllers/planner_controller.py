@@ -1,4 +1,5 @@
 from src.agents.planner import PlannerAgent
+from src.parsers.roadmap_parser import parse_roadmap
 
 
 class PlannerController:
@@ -7,7 +8,7 @@ class PlannerController:
         self.agent = PlannerAgent()
 
     def generate_plan(self, idea: str):
-        return self.agent.run(idea)
-
+        response = self.agent.run(idea)
+        return parse_roadmap(response)
 
 planner_controller = PlannerController()
