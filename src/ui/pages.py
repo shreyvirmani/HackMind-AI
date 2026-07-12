@@ -6,6 +6,7 @@ from src.exceptions.llm_exceptions import InvalidResponseError
 from src.exceptions.llm_exceptions import ModelUnavailableError
 from src.ui.components import metric_card
 from src.exporters.pdf_exporter import export_pdf
+from src.controllers.judge_controller import judge_controller
 
 def planner_page():
 
@@ -23,6 +24,9 @@ def planner_page():
 
     if "research" not in st.session_state:
         st.session_state["research"] = None
+
+    if "judge" not in st.session_state:
+        st.session_state["judge"] = None
 
 
     if st.button("🚀 Generate Roadmap"):
@@ -319,3 +323,93 @@ def planner_page():
                 for tip in research.optimization_tips:
 
                     st.success(tip)
+
+        if st.button(
+            "🏆 Evaluate Project",
+            use_container_width=True,
+        ):
+
+            with st.spinner("Evaluating project..."):
+
+                report = judge_controller.evaluate_project(
+                    st.session_state["roadmap"].model_dump_json(indent=2)
+                )
+
+                st.session_state["judge"] = report
+
+        if st.session_state["judge"]:
+
+            report = st.session_state["judge"]
+
+            st.divider()
+
+            st.header("🏆 AI Project Evaluation")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                metric_card(
+                    "Overall Score",
+                    f"{report.overall_score}/100",
+                    "🏆",
+                )
+
+            with col2:
+
+                metric_card(
+                    "Evaluation Areas",
+                    len(report.scores),
+                    "📊",
+                )
+
+            st.divider() 
+
+            scores_tab, strengths_tab, improvements_tab = st.tabs(
+                [
+                    "📊 Scores",
+                    "💪 Strengths",
+                    "🚀 Improvements",
+                ]
+            )
+
+            with scores_tab:
+
+                for score in report.scores:
+
+                    with st.container(border=True):
+
+                        st.markdown(f"### {score.category}")
+
+                        st.progress(score.score / 10)
+
+                        st.write(f"**Score:** {score.score}/10")
+
+                        st.caption(score.feedback)
+
+            with strengths_tab:
+
+                st.subheader("✅ Strengths")
+
+                for item in report.strengths:
+
+                    st.success(item)
+
+                st.subheader("⚠️ Weaknesses")
+
+                for item in report.weaknesses:
+
+                    st.warning(item)
+
+            with improvements_tab:
+
+                st.subheader("🚀 Suggestions")
+
+                for item in report.improvements:
+
+                    st.info(item)
+
+                st.divider()
+
+                st.subheader("Overall Feedback")
+
+                st.write(report.overall_feedback)
