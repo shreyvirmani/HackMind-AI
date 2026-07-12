@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 
 from src.models.llm_request import LLMRequest
 from src.services.llm_manager import llm
+from src.utils.logger import logger
 
 
 class BaseAgent(ABC):
@@ -20,15 +21,17 @@ class BaseAgent(ABC):
     def run(
         self,
         user_input: str,
-    ):
+    ) -> str:
+
+        logger.info(f"{self.__class__.__name__} started")
 
         prompt = f"""
-{self.system_prompt}
+    {self.system_prompt}
 
-USER INPUT:
+    USER INPUT:
 
-{user_input}
-"""
+    {user_input}
+    """
 
         request = LLMRequest(
             prompt=prompt,
@@ -37,5 +40,7 @@ USER INPUT:
         )
 
         response = self.llm.generate(request)
+
+        logger.info(f"{self.__class__.__name__} completed")
 
         return response.content

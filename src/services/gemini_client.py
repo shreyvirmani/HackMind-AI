@@ -2,7 +2,7 @@ from google import genai
 
 from src.config.settings import settings
 from src.utils.logger import logger
-
+from src.exceptions.llm_exceptions import ModelUnavailableError
 
 class GeminiClient:
     """Low-level Gemini API client."""
@@ -30,9 +30,19 @@ class GeminiClient:
 
         logger.info(f"Using model: {model}")
 
-        response = self.client.models.generate_content(
-            model=model,
-            contents=prompt,
-        )
+        from google.genai.errors import ServerError
 
-        return response.text
+        ...
+
+        try:
+            response = self.client.models.generate_content(
+                model=model,
+                contents=prompt,
+            )
+
+            return response.text
+
+        except ServerError:
+            raise ModelUnavailableError(
+                "Gemini is currently overloaded. Please try again in a few moments."
+            )
