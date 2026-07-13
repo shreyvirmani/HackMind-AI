@@ -2,9 +2,6 @@
 <img src="assets/banner.png" width="100%">
 </p>
 
-<h1 align="center">
-🚀 HackMind AI
-</h1>
 
 <p align="center">
 
