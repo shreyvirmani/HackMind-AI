@@ -7,6 +7,8 @@ from src.exceptions.llm_exceptions import ModelUnavailableError
 from src.ui.components import metric_card
 from src.exporters.pdf_exporter import export_pdf
 from src.controllers.judge_controller import judge_controller
+from src.controllers.pitch_deck_controller import pitch_deck_controller
+from src.exporters.ppt_exporter import export_ppt
 
 def planner_page():
 
@@ -27,6 +29,9 @@ def planner_page():
 
     if "judge" not in st.session_state:
         st.session_state["judge"] = None
+
+    if "pitch_deck" not in st.session_state:
+        st.session_state["pitch_deck"] = None
 
 
     if st.button("🚀 Generate Roadmap"):
@@ -246,21 +251,65 @@ def planner_page():
             use_container_width=True,
         )
 
-        if st.button("🔍 Enhance with AI Research", use_container_width=True):
+        st.divider()
 
-            with st.spinner("Researching project..."):
+        st.subheader("🤖 AI Actions")
+        st.caption("Run additional AI agents to improve your project.")
 
-                try:
+        col1, col2, col3 = st.columns(3)
+
+        # ---------------- Research ----------------
+
+        with col1:
+
+            if st.button(
+                "🔍 Research",
+                use_container_width=True,
+            ):
+
+                with st.spinner("Researching project..."):
+
                     report = research_controller.generate_research(
                         st.session_state["roadmap"].model_dump_json(indent=2)
                     )
 
                     st.session_state["research"] = report
 
-                except ModelUnavailableError as e:
-                    st.warning(str(e))
 
-            st.session_state["research"] = report
+        # ---------------- Judge ----------------
+
+        with col2:
+
+            if st.button(
+                "🏆 Judge",
+                use_container_width=True,
+            ):
+
+                with st.spinner("Evaluating project..."):
+
+                    report = judge_controller.evaluate_project(
+                        st.session_state["roadmap"].model_dump_json(indent=2)
+                    )
+
+                    st.session_state["judge"] = report
+
+
+        # ---------------- Pitch Deck ----------------
+
+        with col3:
+
+            if st.button(
+                "📊 Pitch Deck",
+                use_container_width=True,
+            ):
+
+                with st.spinner("Generating presentation..."):
+
+                    deck = pitch_deck_controller.generate_pitch_deck(
+                        st.session_state["roadmap"].model_dump_json(indent=2)
+                    )
+
+                    st.session_state["pitch_deck"] = deck
 
         if st.session_state["research"]:
             
@@ -324,18 +373,7 @@ def planner_page():
 
                     st.success(tip)
 
-        if st.button(
-            "🏆 Evaluate Project",
-            use_container_width=True,
-        ):
 
-            with st.spinner("Evaluating project..."):
-
-                report = judge_controller.evaluate_project(
-                    st.session_state["roadmap"].model_dump_json(indent=2)
-                )
-
-                st.session_state["judge"] = report
 
         if st.session_state["judge"]:
 
@@ -413,3 +451,86 @@ def planner_page():
                 st.subheader("Overall Feedback")
 
                 st.write(report.overall_feedback)
+
+
+        if st.session_state["pitch_deck"]:
+
+            deck = st.session_state["pitch_deck"]
+
+            st.divider()
+
+            st.header("📊 AI Pitch Deck")
+
+            tabs = st.tabs(
+                [
+                    slide.title
+                    for slide in deck.slides
+                ]
+            )
+
+            for tab, slide in zip(
+                tabs,
+                deck.slides,
+            ):
+
+                with tab:
+
+                    st.subheader(slide.title)
+
+                    for point in slide.content:
+
+                        st.success(point)
+
+            st.divider()
+
+            st.subheader("📥 Export Options")
+
+            export_mode = st.radio(
+                "Presentation Mode",
+                [
+                    "Presentation Only",
+                    "Presentation + AI Appendix",
+                ],
+                horizontal=True,
+            )
+
+            include_ai_slides = (
+                export_mode == "Presentation + AI Appendix"
+            )
+
+            if include_ai_slides:
+
+                with st.spinner("Preparing AI appendix..."):
+
+                    try:
+
+                        if st.session_state.get("research") is None:
+                            st.session_state["research"] = research_controller.generate_research(
+                                roadmap.model_dump_json(indent=2)
+                            )
+
+                        if st.session_state.get("judge") is None:
+                            st.session_state["judge"] = judge_controller.evaluate_project(
+                                roadmap.model_dump_json(indent=2)
+                            )
+
+                    except Exception:
+
+                        st.warning(
+                            "AI appendix couldn't be generated. The presentation will still be exported."
+                        )
+
+            ppt = export_ppt(
+                deck=deck,
+                research=st.session_state.get("research"),
+                judge=st.session_state.get("judge"),
+                include_ai_slides=include_ai_slides,
+            )
+
+            st.download_button(
+                label="📥 Download PowerPoint",
+                data=ppt,
+                file_name=f"{roadmap.project_title}.pptx",
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                use_container_width=True,
+            )
