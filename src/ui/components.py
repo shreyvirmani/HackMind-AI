@@ -21,3 +21,81 @@ def metric_card(title: str, value, icon: str):
             """,
             unsafe_allow_html=True,
         )
+
+def hero():
+
+    st.markdown(
+        """
+        <div style="
+            text-align:center;
+            padding:30px 20px 40px 20px;
+        ">
+
+        <h1 style="
+            font-size:48px;
+            margin-bottom:8px;
+        ">
+        🚀 HackMind AI
+        </h1>
+
+        <p style="
+            font-size:24px;
+            color:#9ca3af;
+            margin-bottom:10px;
+        ">
+        Turn Hackathon Ideas into Winning Projects
+        </p>
+
+        <p style="
+            font-size:18px;
+            color:#6b7280;
+        ">
+        Plan • Research • Judge • Pitch — All powered by AI
+        </p>
+
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+def agent_card(icon, title, desc):
+
+    with st.container(border=True):
+
+        st.markdown(
+            f"""
+            ### {icon} {title}
+
+            {desc}
+            """
+        )
+
+    col1,col2,col3,col4=st.columns(4)
+
+    with col1:
+        agent_card(
+            "🧠",
+            "Planner",
+            "Generate complete hackathon roadmaps."
+        )
+
+    with col2:
+        agent_card(
+            "🔍",
+            "Research",
+            "Competitors, APIs & optimization."
+        )
+
+    with col3:
+        agent_card(
+            "🏆",
+            "Judge",
+            "AI scoring and expert feedback."
+        )
+
+    with col4:
+        agent_card(
+            "🎤",
+            "Pitch Deck",
+            "Presentation ready in seconds."
+        )

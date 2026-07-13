@@ -19,7 +19,29 @@ def planner_page():
     placeholder="Example: An AI platform that helps students find teammates during hackathons...",
     height=180,
     label_visibility="collapsed",
-)
+    )
+
+    if st.session_state.get("roadmap") is None:
+
+        st.info(
+            """
+    ### 🚀 Ready to build your next hackathon winner?
+
+    HackMind AI helps you:
+
+    🧠 Generate a complete project roadmap
+
+    🔍 Research competitors & APIs
+
+    🏆 Get AI judge evaluation
+
+    🎤 Create a professional pitch deck
+
+    Start by describing your idea above and click **✨ Generate AI Roadmap**.
+    """
+        )
+
+        st.divider()
 
     if "roadmap" not in st.session_state:
         st.session_state["roadmap"] = None
@@ -44,11 +66,48 @@ def planner_page():
 
         with st.spinner("Generating roadmap..."):
 
+            progress = st.progress(
+                0,
+                text="🧠 Understanding your idea..."
+            )
+
             try:
+
+                progress.progress(
+                    20,
+                    text="📋 Planning project roadmap..."
+                )
+
+                progress.progress(
+                    40,
+                    text="⚙️ Designing system architecture..."
+                )
+
                 roadmap = planner_controller.generate_plan(idea)
+
+                progress.progress(
+                    70,
+                    text="📝 Building development timeline..."
+                )
+
                 st.session_state["roadmap"] = roadmap
 
-            except InvalidResponseError  as e:
+                progress.progress(
+                    90,
+                    text="✨ Finalizing roadmap..."
+                )
+
+                progress.progress(
+                    100,
+                    text="✅ Roadmap generated successfully!"
+                )
+
+                progress.empty()
+
+            except InvalidResponseError as e:
+
+                progress.empty()
+
                 st.error(str(e))
                 return
             
