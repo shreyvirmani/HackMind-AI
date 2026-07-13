@@ -24,7 +24,7 @@ Plan • Research • Judge • Pitch
 
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-![Version](https://img.shields.io/badge/Version-v1.1-orange)
+![Version](https://img.shields.io/badge/Version-v1.0-orange)
 
 </p>
 
@@ -148,21 +148,25 @@ User
 ## 🏆 Judge Agent
 
 *Screenshot coming soon.*
+
 ---
 
 ## 🎤 Pitch Deck
 
 *Screenshot coming soon.*
+
 ---
 
 ## 📄 PDF Export
 
 *Screenshot coming soon.*
+
 ---
 
 ## 📊 PowerPoint Export
 
 *Screenshot coming soon.*
+
 ---
 
 # ⚙ Tech Stack
@@ -282,9 +286,13 @@ Feel free to fork the project and submit a Pull Request.
 
 **Shrey Virmani**
 
-GitHub
+**Github**:
 
 https://github.com/shreyvirmani
+
+**Linkedin**:
+
+https://www.linkedin.com/in/shrey-virmani-1a352a325/
 
 ---
 
