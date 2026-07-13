@@ -1,194 +1,221 @@
-# 🚀 HackMind AI
+<p align="center">
+<img src="assets/banner.png" width="100%">
+</p>
 
-> **An AI-powered Multi-Agent Hackathon Planning Assistant built with Google Gemini, Python, and Streamlit.**
+<h1 align="center">
+🚀 HackMind AI
+</h1>
 
-HackMind AI helps transform a simple hackathon idea into a complete project roadmap with AI-generated planning, architecture suggestions, technology recommendations, development timelines, and team role allocation.
+<p align="center">
 
-🌐 **Live Demo:** https://hackmind-ai.streamlit.app/
+Multi-Agent AI Platform for Planning Winning Hackathon Projects
+
+Plan • Research • Judge • Pitch
+
+</p>
+
+<p align="center">
+
+![Python](https://img.shields.io/badge/Python-3.12-blue)
+
+![Streamlit](https://img.shields.io/badge/Streamlit-Deployed-red)
+
+![Google Gemini](https://img.shields.io/badge/Google-Gemini-blue)
+
+![License](https://img.shields.io/badge/License-MIT-green)
+
+![Version](https://img.shields.io/badge/Version-v1.1-orange)
+
+</p>
 
 ---
 
-## ✨ Features
+# 🌟 Overview
 
-* AI-powered hackathon project planning
-* Intelligent project roadmap generation
-* Technology stack recommendations
-* System architecture suggestions
-* Development timeline creation
-* Team role recommendations
-* Modular AI agent architecture
-* Response caching for faster performance
-* Built-in API rate limiting
-* Telemetry and performance monitoring
-* Clean Streamlit dashboard
-* Production-ready project structure
+HackMind AI is an AI-powered multi-agent assistant designed to help students, developers, and hackathon teams transform an idea into a complete hackathon-ready project within minutes.
+
+Instead of spending hours researching technologies, competitors, timelines, and presentation content, HackMind AI automatically generates everything required for a successful hackathon submission.
 
 ---
 
-## 📸 Screenshots
+# ✨ Features
 
-### Home Page
+✅ AI Project Planner
 
-> ![alt text](assets/screenshots/home.png)
+Generate a complete roadmap including:
 
-## Generating...
+- Problem Statement
+- Solution
+- Features
+- Tech Stack
+- Timeline
+- Team Roles
+- Future Scope
 
-> ![alt text](assets/screenshots/generating.png)
+---
 
-### Generated Roadmap (overview)
+✅ AI Research Agent
 
-> ![alt text](<assets/screenshots/Generating Roadmap(overview).png>)
+Automatically researches
 
-## Tech Stack
+- Similar Products
+- Competitors
+- APIs
+- Risks
+- Optimization Tips
 
-> ![alt text](assets/screenshots/techstack.png)
+---
 
-## Development Timelines
+✅ AI Judge Agent
 
-> ![alt text](<assets/screenshots/developmet timelines.png>)
+Evaluates your project like a real hackathon judge.
 
-## Team Roles and Future Scope
+Provides
 
-> ![alt text](<assets/screenshots/team roles and future scope.png>)
+- Overall Score
+- Category Scores
+- Strengths
+- Weaknesses
+- Improvements
 
-## 🏗️ Architecture
+---
+
+✅ AI Pitch Deck Generator
+
+Generates a professional presentation including
+
+- Problem
+- Solution
+- Market
+- Architecture
+- Features
+- Future Scope
+
+Export directly as PowerPoint.
+
+---
+
+✅ Export Options
+
+- PDF Roadmap
+- PowerPoint Pitch Deck
+
+---
+
+# 🏗 System Architecture
 
 ```
 User
    │
    ▼
-Streamlit UI
+🧠 Planner Agent
    │
    ▼
-Planner Controller
+🔍 Research Agent
    │
    ▼
-Planner Agent
+🏆 Judge Agent
    │
    ▼
-LLM Manager
+🎤 Pitch Deck Agent
    │
-   ├── Cache
-   ├── Rate Limiter
-   ├── Telemetry
    ▼
-Google Gemini
+📄 PDF & PPT Export
 ```
 
 ---
 
-## ⚙️ Tech Stack
+# 📸 Screenshots
+
+## 🏠 Landing Page
+
+![Landing Page](assets/screenshots/home.png)
+
+---
+
+## 🧠 Planner Agent
+
+![Planner](assets/screenshots/planner.png)
+
+---
+
+## 🔍 Research Agent
+
+*Screenshot coming soon.*
+
+---
+
+## 🏆 Judge Agent
+
+*Screenshot coming soon.*
+---
+
+## 🎤 Pitch Deck
+
+*Screenshot coming soon.*
+---
+
+## 📄 PDF Export
+
+*Screenshot coming soon.*
+---
+
+## 📊 PowerPoint Export
+
+*Screenshot coming soon.*
+---
+
+# ⚙ Tech Stack
 
 ### Frontend
 
-* Streamlit
+- Streamlit
 
 ### Backend
 
-* Python
+- Python
 
 ### AI
 
-* Google Gemini API
-* Agent-based architecture
+- Google Gemini
+- Prompt Engineering
 
-### Configuration
+### Data Validation
 
-* Pydantic Settings
-* Python Dotenv
+- Pydantic
 
-### Utilities
+### Document Generation
 
-* Logging
-* Caching
-* Rate Limiting
-* Telemetry
+- ReportLab
+- python-pptx
 
-### Future Technologies
+### Deployment
 
-* LangGraph
-* Docker
-* AWS
-* PostgreSQL
-* Redis
+- Streamlit Community Cloud
 
 ---
 
-## 📂 Project Structure
+# 🚀 Installation
 
-```
-HackMind-AI/
-│
-├── .github/
-├── src/
-│   ├── agents/
-│   ├── config/
-│   ├── controllers/
-│   ├── models/
-│   ├── prompts/
-│   ├── services/
-│   ├── ui/
-│   └── utils/
-│
-├── app.py
-├── requirements.txt
-├── README.md
-└── .env.example
-```
-
----
-
-## 🚀 Getting Started
-
-### Clone the Repository
+Clone the repository
 
 ```bash
 git clone https://github.com/shreyvirmani/HackMind-AI.git
+```
+
+Move inside
+
+```bash
 cd HackMind-AI
 ```
 
-### Create Virtual Environment
-
-```bash
-python -m venv venv
-```
-
-### Activate Environment
-
-**Windows**
-
-```bash
-venv\Scripts\activate
-```
-
-**Linux / macOS**
-
-```bash
-source venv/bin/activate
-```
-
-### Install Dependencies
+Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Configure Environment Variables
-
-Create a `.env` file.
-
-```
-GOOGLE_API_KEY=YOUR_API_KEY
-
-PRIMARY_MODEL=gemini-2.5-flash
-SECONDARY_MODEL=gemini-2.5-flash-lite
-TERTIARY_MODEL=gemini-2.5-flash
-
-MAX_RETRIES=3
-REQUEST_DELAY=2
-```
-
-### Run the Application
+Run
 
 ```bash
 streamlit run app.py
@@ -196,54 +223,79 @@ streamlit run app.py
 
 ---
 
-## 🛣️ Development Roadmap
+# 📂 Project Structure
 
-### ✅ Completed
+```
+HackMind-AI
 
-* Modular project architecture
-* Planner Agent
-* Gemini API integration
-* LLM Manager
-* Response caching
-* API rate limiter
-* Telemetry module
-* Streamlit UI
-* GitHub integration
-* Streamlit Cloud deployment
-
-### 🚧 In Progress
-
-* Structured JSON output
-* Professional dashboard
-* Enhanced UI
-
-### 🔜 Planned
-
-* PDF export
-* PowerPoint generation
-* Research Agent
-* Judge Agent
-* Business Agent
-* LangGraph orchestration
-* Docker support
-* AWS deployment
-* CI/CD pipeline
+├── src
+│
+├── agents
+├── controllers
+├── exporters
+├── models
+├── parsers
+├── prompts
+├── services
+├── ui
+│
+├── assets
+├── app.py
+├── requirements.txt
+└── README.md
+```
 
 ---
 
-## 🎯 Project Goals
+# 🛣 Roadmap
 
-* Build a production-quality AI application.
-* Demonstrate agentic AI architecture.
-* Showcase scalable software engineering practices.
-* Create a portfolio project suitable for AI/ML internships and software engineering roles.
+### ✅ Version 1.0
+
+- Planner Agent
+- Research Agent
+- Judge Agent
+- Pitch Deck Agent
+- Modern UI
+- Better Sidebar
+- Improved Landing Page
+- GitHub Branding
+
+### 🚀 Coming Soon
+
+- Team Builder Agent
+- Demo Script Generator
+- Business Model Generator
+- Task Assignment Agent
+- ZIP Export
 
 ---
 
-## 👨‍💻 Author
+# 🤝 Contributing
+
+Contributions, issues and feature requests are welcome.
+
+Feel free to fork the project and submit a Pull Request.
+
+---
+
+# 👨‍💻 Author
 
 **Shrey Virmani**
 
-GitHub: https://github.com/shreyvirmani
+GitHub
 
-LinkedIn: https://www.linkedin.com/in/shrey-virmani-1a352a325/
+https://github.com/shreyvirmani
+
+---
+
+# ⭐ Support
+
+If you found this project useful,
+
+please consider giving it a ⭐ on GitHub.
+
+It really helps and motivates future development.
+
+---
+
+Made using Python, Streamlit and Gemini AI.
