@@ -138,31 +138,31 @@ User
 
 ## 🔍 Research Agent
 
-*Screenshot coming soon.*
+![Research](assets/screenshots/research.png)
 
 ---
 
 ## 🏆 Judge Agent
 
-*Screenshot coming soon.*
+![Judge](assets/screenshots/judge.png)
 
 ---
 
 ## 🎤 Pitch Deck
 
-*Screenshot coming soon.*
+![Pitch Deck](assets/screenshots/pitchdeck.png)
 
 ---
 
 ## 📄 PDF Export
 
-*Screenshot coming soon.*
+![PDF](assets/screenshots/pdf_export.png)
 
 ---
 
 ## 📊 PowerPoint Export
 
-*Screenshot coming soon.*
+![PPT](assets/screenshots/ppt_export.png)
 
 ---
 

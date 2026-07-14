@@ -8,7 +8,7 @@ def render_sidebar():
         # ==========================================
         # LOGO
         # ==========================================
-
+        
         st.markdown("# 🚀 HackMind AI")
 
         st.caption("Multi-Agent Hackathon Planning Assistant")
