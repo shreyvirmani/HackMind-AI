@@ -9,7 +9,9 @@ class WorkflowController:
 
     def build_project(self, idea: str):
         print("WorkflowController.build_project() called")
+
         result = {
+            "project_id": None,
             "status": "success",
             "roadmap": None,
             "research": None,
@@ -33,6 +35,7 @@ class WorkflowController:
             result["errors"]["planner"] = str(e)
             return result
 
+
         # -----------------------------
         # Research
         # -----------------------------
@@ -45,6 +48,7 @@ class WorkflowController:
         except Exception as e:
             result["status"] = "partial_success"
             result["errors"]["research"] = str(e)
+
 
         # -----------------------------
         # Judge
@@ -59,6 +63,7 @@ class WorkflowController:
             result["status"] = "partial_success"
             result["errors"]["judge"] = str(e)
 
+
         # -----------------------------
         # Pitch Deck
         # -----------------------------
@@ -71,8 +76,11 @@ class WorkflowController:
         except Exception as e:
             result["status"] = "partial_success"
             result["errors"]["pitch_deck"] = str(e)
-            
+
+
         print("Reached save block")
+
+
         # -----------------------------
         # Save Project
         # -----------------------------
@@ -87,12 +95,22 @@ class WorkflowController:
                 pitch_deck=result["pitch_deck"],
             )
 
-            result["project_id"] = project.id
+            result["project_id"] = str(project.id)
+
+            print(
+                f"Project saved successfully: {result['project_id']}"
+            )
 
         except Exception as e:
 
             result["status"] = "partial_success"
             result["errors"]["database"] = str(e)
+
+            print(
+                "Database save failed:",
+                str(e)
+            )
+
 
         return result
 

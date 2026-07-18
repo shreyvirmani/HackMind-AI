@@ -6,7 +6,10 @@ class WorkflowRequest(BaseModel):
 
 
 class WorkflowResponse(BaseModel):
-    roadmap: dict
+    project_id: str
+    project_title: str
+    description: str
+    planner: dict
     research: dict
     judge: dict
-    pitch_deck: dict
+    pitch: dict
