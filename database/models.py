@@ -14,6 +14,12 @@ class Project(Base):
         index=True
     )
 
+    user_id = Column(
+        String,
+        nullable=False,
+        index=True,
+    )
+
     project_title = Column(
         String,
         nullable=False

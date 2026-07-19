@@ -3,6 +3,8 @@ from fastapi import APIRouter, HTTPException
 from api.schemas import WorkflowRequest
 from src.controllers.workflow_controller import workflow_controller
 from src.services.project_service import project_service
+from typing import List
+from api.project_schemas import ProjectSummary
 
 router = APIRouter(
     tags=["Workflow"],
@@ -24,7 +26,10 @@ def build_project(request: WorkflowRequest):
 # Get All Projects
 # -------------------------
 
-@router.get("/projects")
+@router.get(
+    "/projects",
+    response_model=List[ProjectSummary]
+)
 def get_projects():
     return project_service.get_all_projects()
 

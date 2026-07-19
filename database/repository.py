@@ -8,6 +8,7 @@ class ProjectRepository:
     def create_project(
         self,
         db: Session,
+        user_id: str,
         project_title: str,
         idea: str,
         roadmap: dict,
@@ -21,8 +22,9 @@ class ProjectRepository:
             if isinstance(judge, dict)
             else 0
         )
-        print("Creating project:", project_title)
+
         project = Project(
+            user_id=user_id,
             project_title=project_title,
             idea=idea,
             roadmap=roadmap,
@@ -33,54 +35,54 @@ class ProjectRepository:
         )
 
         db.add(project)
-
-        try:
-            db.commit()
-            db.refresh(project)
-            print("✅ Project saved successfully:", project.id)
-        except Exception as e:
-            db.rollback()
-            print("❌ Database Error:", e)
-            raise
+        db.commit()
+        db.refresh(project)
 
         return project
-
 
     def get_all_projects(
         self,
         db: Session,
+        user_id: str,
     ):
 
         return (
             db.query(Project)
+            .filter(Project.user_id == user_id)
             .order_by(Project.created_at.desc())
             .all()
         )
-
 
     def get_project(
         self,
         db: Session,
         project_id: int,
+        user_id: str,
     ):
 
         return (
             db.query(Project)
-            .filter(Project.id == project_id)
+            .filter(
+                Project.id == project_id,
+                Project.user_id == user_id,
+            )
             .first()
         )
-
 
     def delete_project(
         self,
         db: Session,
         project_id: int,
+        user_id: str,
     ):
 
-        project = self.get_project(db, project_id)
+        project = self.get_project(
+            db,
+            project_id,
+            user_id,
+        )
 
         if project:
-
             db.delete(project)
             db.commit()
 

@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 class WorkflowRequest(BaseModel):
     idea: str
+    user_id: str
 
 
 class WorkflowResponse(BaseModel):
