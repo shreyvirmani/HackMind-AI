@@ -21,11 +21,12 @@ class ProjectService:
                 user_id=user_id,
                 project_title=roadmap.project_title,
                 idea=idea,
-                roadmap=roadmap.model_dump(),
-                research=research.model_dump(),
-                judge=judge.model_dump(),
-                pitch_deck=pitch_deck.model_dump(),
+                roadmap=roadmap.model_dump() if roadmap else {},
+                research=research.model_dump() if research else {},
+                judge=judge.model_dump() if judge else {},
+                pitch_deck=pitch_deck.model_dump() if pitch_deck else {},
             )
+
         finally:
             db.close()
 
@@ -40,6 +41,7 @@ class ProjectService:
                 db,
                 user_id,
             )
+
         finally:
             db.close()
 
@@ -56,6 +58,7 @@ class ProjectService:
                 project_id,
                 user_id,
             )
+
         finally:
             db.close()
 
@@ -72,6 +75,7 @@ class ProjectService:
                 project_id,
                 user_id,
             )
+
         finally:
             db.close()
 

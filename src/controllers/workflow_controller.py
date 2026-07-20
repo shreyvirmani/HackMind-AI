@@ -95,6 +95,11 @@ class WorkflowController:
 
         print("Reached save block")
 
+        print("Roadmap:", roadmap is not None)
+        print("Research:", result["research"] is not None)
+        print("Judge:", result["judge"] is not None)
+        print("Pitch:", result["pitch_deck"] is not None)
+        
         # ---------------------------------
         # Save Project
         # ---------------------------------
