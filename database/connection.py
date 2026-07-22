@@ -3,10 +3,13 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 import os
 
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:password@localhost:5432/hackmind"
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL environment variable is missing"
+    )
 
 
 engine = create_engine(
@@ -28,7 +31,9 @@ Base = declarative_base()
 
 def get_db():
     db = SessionLocal()
+
     try:
         yield db
+
     finally:
         db.close()
