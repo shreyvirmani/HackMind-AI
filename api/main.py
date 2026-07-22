@@ -16,19 +16,20 @@ app = FastAPI(
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
-# CORS Configuration
+# CORS
+origins = [
+    "http://localhost:3000",
+    "https://hackmind-ai-copilot-flm90goiq-hack-mind-ai.vercel.app",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-    ],
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
-# API Routes
 app.include_router(workflow_router)
 app.include_router(projects_router)
 app.include_router(chat_router)
@@ -36,6 +37,4 @@ app.include_router(chat_router)
 
 @app.get("/")
 def root():
-    return {
-        "message": "HackMind AI API is running 🚀"
-    }
+    return {"message": "HackMind AI API is running 🚀"}
