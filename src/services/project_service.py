@@ -30,6 +30,7 @@ class ProjectService:
         finally:
             db.close()
 
+
     def get_all_projects(
         self,
         user_id,
@@ -44,6 +45,7 @@ class ProjectService:
 
         finally:
             db.close()
+
 
     def get_project(
         self,
@@ -62,6 +64,29 @@ class ProjectService:
         finally:
             db.close()
 
+
+    def apply_suggestion(
+        self,
+        project_id,
+        user_id,
+        section,
+        updated_data,
+    ):
+        db = SessionLocal()
+
+        try:
+            return project_repository.update_project_section(
+                db=db,
+                project_id=project_id,
+                user_id=user_id,
+                section=section,
+                updated_data=updated_data,
+            )
+
+        finally:
+            db.close()
+
+
     def delete_project(
         self,
         project_id,
@@ -78,6 +103,7 @@ class ProjectService:
 
         finally:
             db.close()
+
 
 
 project_service = ProjectService()

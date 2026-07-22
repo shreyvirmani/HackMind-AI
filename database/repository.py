@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from .models import Project
 
@@ -35,10 +36,14 @@ class ProjectRepository:
         )
 
         db.add(project)
+
         db.commit()
+
         db.refresh(project)
 
         return project
+
+
 
     def get_all_projects(
         self,
@@ -52,6 +57,8 @@ class ProjectRepository:
             .order_by(Project.created_at.desc())
             .all()
         )
+
+
 
     def get_project(
         self,
@@ -69,6 +76,108 @@ class ProjectRepository:
             .first()
         )
 
+
+
+    def update_project_section(
+        self,
+        db: Session,
+        project_id: int,
+        user_id: str,
+        section: str,
+        updated_data: dict,
+    ):
+
+        project = self.get_project(
+            db,
+            project_id,
+            user_id,
+        )
+
+
+        if not project:
+            return None
+
+
+
+        if section == "roadmap":
+
+            current_data = project.roadmap or {}
+
+            current_data.update(updated_data)
+
+            project.roadmap = current_data
+
+            flag_modified(
+                project,
+                "roadmap"
+            )
+
+
+
+        elif section == "research":
+
+            current_data = project.research or {}
+
+            current_data.update(updated_data)
+
+            project.research = current_data
+
+            flag_modified(
+                project,
+                "research"
+            )
+
+
+
+        elif section == "judge":
+
+            current_data = project.judge or {}
+
+            current_data.update(updated_data)
+
+            project.judge = current_data
+
+            flag_modified(
+                project,
+                "judge"
+            )
+
+
+
+        elif section == "pitch_deck":
+
+            current_data = project.pitch_deck or {}
+
+            current_data.update(updated_data)
+
+            project.pitch_deck = current_data
+
+            flag_modified(
+                project,
+                "pitch_deck"
+            )
+
+
+
+        else:
+
+            raise ValueError(
+                f"Invalid section: {section}"
+            )
+
+
+
+        db.commit()
+
+        db.refresh(project)
+
+
+        return project
+
+
+
+
+
     def delete_project(
         self,
         db: Session,
@@ -82,11 +191,18 @@ class ProjectRepository:
             user_id,
         )
 
+
         if project:
+
             db.delete(project)
+
             db.commit()
 
+
         return project
+
+
+
 
 
 project_repository = ProjectRepository()

@@ -5,6 +5,7 @@ from api.routes.workflow import router as workflow_router
 from database.connection import engine, Base
 from database import models
 from api.routes.projects import router as projects_router
+from api.routes.chat import router as chat_router
 
 app = FastAPI(
     title="HackMind AI API",
@@ -26,6 +27,7 @@ app.add_middleware(
 
 app.include_router(workflow_router)
 app.include_router(projects_router)
+app.include_router(chat_router)
 
 
 @app.get("/")
