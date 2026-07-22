@@ -7,7 +7,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 if not DATABASE_URL:
-    raise RuntimeError(
+    raise ValueError(
         "DATABASE_URL environment variable is missing"
     )
 
@@ -16,6 +16,9 @@ engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
     pool_recycle=300,
+    connect_args={
+        "sslmode": "require"
+    }
 )
 
 
