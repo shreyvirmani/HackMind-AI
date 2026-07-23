@@ -19,7 +19,7 @@ Base.metadata.create_all(bind=engine)
 # CORS
 origins = [
     "http://localhost:3000",
-    "https://hackmind-ai-copilot-flm90goiq-hack-mind-ai.vercel.app",
+    "https://hackmind-ai-copilot.vercel.app",
 ]
 
 app.add_middleware(
