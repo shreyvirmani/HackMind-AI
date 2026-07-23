@@ -11,37 +11,40 @@ from database import models
 from websocket_manager import manager
 
 
+
 app = FastAPI(
     title="HackMind AI API",
     version="1.0.0",
 )
 
 
+
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
 
-# CORS
-origins = [
-    "http://localhost:3000",
-    "https://hackmind-ai-copilot.vercel.app",
-]
 
+# ===========================
+# CORS Configuration
+# ===========================
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+
+    # Allow localhost + all Vercel deployments
+    allow_origin_regex=r"https://.*\.vercel\.app",
+
     allow_credentials=True,
+
     allow_methods=[
-        "GET",
-        "POST",
-        "PUT",
-        "PATCH",
-        "DELETE",
-        "OPTIONS",
+        "*"
     ],
-    allow_headers=["*"],
+
+    allow_headers=[
+        "*"
+    ],
 )
+
 
 
 # API Routes
@@ -71,8 +74,8 @@ async def workflow_socket(
 
         while True:
 
-            # Keeps connection alive.
-            # Frontend sends heartbeat messages.
+            # Receive heartbeat messages
+            # from frontend to keep socket alive
             await websocket.receive_text()
 
 
