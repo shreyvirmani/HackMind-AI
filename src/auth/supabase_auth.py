@@ -1,10 +1,8 @@
 import os
-
 import httpx
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-
 
 security = HTTPBearer(auto_error=True)
 

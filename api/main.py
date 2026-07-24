@@ -11,17 +11,17 @@ from database import models
 from websocket_manager import manager
 
 
-
 app = FastAPI(
     title="HackMind AI API",
     version="1.0.0",
 )
 
 
-
+# ===========================
 # Create database tables
-Base.metadata.create_all(bind=engine)
+# ===========================
 
+Base.metadata.create_all(bind=engine)
 
 
 # ===========================
@@ -31,7 +31,11 @@ Base.metadata.create_all(bind=engine)
 app.add_middleware(
     CORSMiddleware,
 
-    # Allow localhost + all Vercel deployments
+    allow_origins=[
+        "http://localhost:3000",
+        "https://hackmind-ai-copilot.vercel.app",
+    ],
+
     allow_origin_regex=r"https://.*\.vercel\.app",
 
     allow_credentials=True,
@@ -46,12 +50,13 @@ app.add_middleware(
 )
 
 
-
+# ===========================
 # API Routes
+# ===========================
+
 app.include_router(workflow_router)
 app.include_router(projects_router)
 app.include_router(chat_router)
-
 
 
 # ===========================
@@ -68,7 +73,6 @@ async def workflow_socket(
         workflow_id,
         websocket,
     )
-
 
     try:
 
@@ -95,6 +99,9 @@ async def workflow_socket(
         )
 
 
+# ===========================
+# Root Endpoint
+# ===========================
 
 @app.get("/")
 def root():
