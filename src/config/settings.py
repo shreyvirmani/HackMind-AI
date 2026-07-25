@@ -1,4 +1,3 @@
-
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 
@@ -8,11 +7,35 @@ load_dotenv()
 
 class Settings(BaseSettings):
 
+    # ---- Provider API keys (all genuinely free tiers) ----
+    # GOOGLE_API_KEY_2 is a SECOND Gemini key from a *different*
+    # Google AI Studio project. Gemini's free quota is tracked per
+    # project/key, so a second free key effectively doubles the free
+    # request budget instead of costing anything.
+    # GROQ_API_KEY is Groq's free, no-card-required tier (open-source
+    # models only: Llama, GPT-OSS, etc). It's a genuinely different
+    # provider/infrastructure, so a Google-side outage doesn't take it
+    # down too.
+    # OPENAI_API_KEY / ANTHROPIC_API_KEY are OPTIONAL and NOT free --
+    # both require a paid balance to use anything beyond a token
+    # trial. Leave them blank to stay 100% on free tiers; the chain
+    # simply skips any provider whose key isn't set.
     GOOGLE_API_KEY: str
+    GOOGLE_API_KEY_2: str = ""
+    GROQ_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
+    ANTHROPIC_API_KEY: str = ""
 
-    PRIMARY_MODEL: str
-    SECONDARY_MODEL: str
-    TERTIARY_MODEL: str
+    # ---- Fallback chain (in this order) ----
+    # Gemini key 1 -> Gemini key 2 -> Groq -> OpenAI -> Claude.
+    # Each provider gets its own rate limiter + circuit breaker, so a
+    # 429 on one immediately rolls over to the next without wasting
+    # requests on the one that's already exhausted.
+    PRIMARY_MODEL: str = "gemini-2.5-flash"       # Gemini key 1
+    SECONDARY_MODEL: str = "gemini-2.5-flash"     # Gemini key 2
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    TERTIARY_MODEL: str = "gpt-4o-mini"           # only used if OPENAI_API_KEY set
+    QUATERNARY_MODEL: str = "claude-sonnet-4-6"   # only used if ANTHROPIC_API_KEY set
 
     MAX_RETRIES: int = 3
     REQUEST_DELAY: int = 2
