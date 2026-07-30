@@ -3,6 +3,7 @@ import asyncio
 from websocket_manager import manager
 
 from src.services.project_service import project_service
+from src.services.subscription_service import subscription_service
 
 from src.controllers.planner_controller import planner_controller
 from src.controllers.research_controller import research_controller
@@ -142,6 +143,14 @@ class WorkflowRunner:
 
             workflow.project_id = str(project.id)
             workflow.finished = True
+
+            # Only counts against the Free-plan quota once a project
+            # has actually completed and been saved -- a failed
+            # workflow shouldn't cost the user a generation.
+            await asyncio.to_thread(
+                subscription_service.record_generation,
+                workflow.user_id,
+            )
 
             await manager.send(
                 workflow.workflow_id,

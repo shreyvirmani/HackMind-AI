@@ -8,6 +8,7 @@ from src.services.workflow_registry import workflow_registry
 from src.services.workflow_runner import workflow_runner
 
 from src.auth.supabase_auth import get_current_user
+from src.services.subscription_service import require_generation_quota
 
 
 router = APIRouter(
@@ -24,7 +25,7 @@ router = APIRouter(
 async def start_workflow(
     request: WorkflowRequest,
     background_tasks: BackgroundTasks,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_generation_quota),
 ):
     """
     Starts AI workflow.

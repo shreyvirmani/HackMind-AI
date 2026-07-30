@@ -1,13 +1,19 @@
 import os
-import httpx
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-security = HTTPBearer(auto_error=True)
+from supabase import create_client
+
+security = HTTPBearer()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_PUBLISHABLE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY")
+
+supabase = create_client(
+    SUPABASE_URL,
+    SUPABASE_PUBLISHABLE_KEY,
+)
 
 
 async def get_current_user(
@@ -15,19 +21,19 @@ async def get_current_user(
 ):
     token = credentials.credentials
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            f"{SUPABASE_URL}/auth/v1/user",
-            headers={
-                "apikey": SUPABASE_PUBLISHABLE_KEY,
-                "Authorization": f"Bearer {token}",
-            },
-        )
+    try:
+        user = supabase.auth.get_user(token)
 
-    if response.status_code != 200:
+        if user.user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+            )
+
+        return user.user.model_dump()
+
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
-
-    return response.json()
