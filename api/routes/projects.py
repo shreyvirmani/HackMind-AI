@@ -1,7 +1,7 @@
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ValidationError
 
 from src.services.project_service import project_service
@@ -21,13 +21,16 @@ class ApplySuggestionRequest(BaseModel):
     updated_data: dict
 
 
+
 @router.get("")
 def get_projects(
     current_user=Depends(get_current_user),
 ):
+
     return project_service.get_all_projects(
         user_id=current_user["id"],
     )
+
 
 
 @router.get("/{project_id}")
@@ -41,13 +44,16 @@ def get_project(
         user_id=current_user["id"],
     )
 
+
     if not project:
         raise HTTPException(
             status_code=404,
             detail="Project not found",
         )
 
+
     return project
+
 
 
 @router.get("/{project_id}/pdf")
@@ -61,20 +67,29 @@ def download_project_pdf(
         current_user.get("email")
     )
 
+
     project = project_service.get_project(
         project_id=project_id,
         user_id=current_user["id"],
     )
 
+
     if not project:
+
         raise HTTPException(
             status_code=404,
             detail="Project not found",
         )
 
+
     try:
 
-        pdf_buffer = PDFGenerator(project)
+        pdf_generator = PDFGenerator()
+
+        pdf_path = pdf_generator.generate(
+            project
+        )
+
 
     except ValidationError as e:
 
@@ -86,11 +101,12 @@ def download_project_pdf(
         raise HTTPException(
             status_code=422,
             detail=(
-                "This project isn't fully generated yet. "
-                "Complete planner, research, judge and pitch "
-                "generation before creating PDF."
+                "Project data is incomplete. "
+                "Complete planner, research, judge "
+                "and pitch generation first."
             ),
         )
+
 
     except Exception as e:
 
@@ -105,6 +121,7 @@ def download_project_pdf(
         )
 
 
+
     safe_title = re.sub(
         r"[^a-zA-Z0-9_-]+",
         "_",
@@ -112,17 +129,21 @@ def download_project_pdf(
     ).strip("_") or "project"
 
 
+
     filename = f"{safe_title}_report.pdf"
 
 
-    return StreamingResponse(
-        pdf_buffer,
+
+    return FileResponse(
+
+        path=str(pdf_path),
+
         media_type="application/pdf",
-        headers={
-            "Content-Disposition":
-            f'attachment; filename="{filename}"'
-        },
+
+        filename=filename
+
     )
+
 
 
 @router.post("/{project_id}/apply-suggestion")
@@ -131,6 +152,7 @@ def apply_suggestion(
     request: ApplySuggestionRequest,
     current_user=Depends(require_pro),
 ):
+
 
     project = project_service.apply_suggestion(
         project_id=project_id,
@@ -141,6 +163,7 @@ def apply_suggestion(
 
 
     if not project:
+
         raise HTTPException(
             status_code=404,
             detail="Project not found",
@@ -152,6 +175,7 @@ def apply_suggestion(
         "message": "AI suggestion applied successfully",
         "project": project,
     }
+
 
 
 @router.delete("/{project_id}")
@@ -167,6 +191,7 @@ def delete_project(
 
 
     if not project:
+
         raise HTTPException(
             status_code=404,
             detail="Project not found",
