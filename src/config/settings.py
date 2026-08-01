@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     RAZORPAY_KEY_ID: str = ""
     RAZORPAY_KEY_SECRET: str = ""
     RAZORPAY_WEBHOOK_SECRET: str = ""
-    PRO_PLAN_PRICE_INR: int = 199  # rupees; charged as paise (x100) to Razorpay
+    PRO_PLAN_PRICE_INR: int = 99  # rupees; charged as paise (x100) to Razorpay
 
     LOG_LEVEL: str = "INFO"
 
