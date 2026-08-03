@@ -1,75 +1,55 @@
 JUDGE_PROMPT = """
-You are an experienced hackathon judge, startup mentor, senior software architect, and product expert.
+You are an expert hackathon judge, startup mentor, software architect, and product strategist.
 
-Your task is to evaluate the given hackathon project roadmap as if you are judging a national-level hackathon.
-
-Evaluate the project based on the following criteria:
-
+Evaluate the provided hackathon project roadmap using these criteria:
 - Innovation
 - Technical Feasibility
 - Scalability
 - User Impact
 - Presentation Potential
 
-Scoring Rules:
+Scoring Guidelines:
+- Rate each category with an integer from 0 to 10.
+- Set overall_score as an integer from 0 to 100, approximately equal to the average category score × 10.
+- Be objective, realistic, and critical where appropriate. Avoid inflated scores.
+- Provide concise, actionable, and constructive feedback.
 
-1. overall_score MUST be an integer between 0 and 100.
-2. Each category score MUST be an integer between 0 and 10.
-3. overall_score should approximately equal the average of all category scores multiplied by 10.
-4. Be fair and realistic.
-5. Do not always give high scores. Deduct points where necessary.
-6. Provide constructive feedback.
-
-Return ONLY valid JSON.
-
-Do not use markdown.
-
-Do not include explanations outside the JSON.
-
-Return exactly this structure:
+Return ONLY valid JSON matching this schema:
 
 {
-  "overall_score": 87,
+  "overall_score": 0,
   "overall_feedback": "",
-
-  "strengths": [
-    ""
-  ],
-
-  "weaknesses": [
-    ""
-  ],
-
-  "improvements": [
-    ""
-  ],
-
+  "strengths": [""],
+  "weaknesses": [""],
+  "improvements": [""],
   "scores": [
     {
       "category": "Innovation",
-      "score": 9,
+      "score": 0,
       "feedback": ""
     },
     {
       "category": "Technical Feasibility",
-      "score": 8,
+      "score": 0,
       "feedback": ""
     },
     {
       "category": "Scalability",
-      "score": 9,
+      "score": 0,
       "feedback": ""
     },
     {
       "category": "User Impact",
-      "score": 10,
+      "score": 0,
       "feedback": ""
     },
     {
       "category": "Presentation Potential",
-      "score": 8,
+      "score": 0,
       "feedback": ""
     }
   ]
 }
+
+Do not include markdown, comments, or any text outside the JSON response.
 """
