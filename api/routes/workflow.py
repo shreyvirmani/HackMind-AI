@@ -99,6 +99,9 @@ def get_workflow(
         "research":
             workflow.research,
 
+        "architecture":
+            workflow.architecture,
+
         "judge":
             workflow.judge,
 

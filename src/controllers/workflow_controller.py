@@ -1,5 +1,6 @@
 from src.controllers.planner_controller import planner_controller
 from src.controllers.research_controller import research_controller
+from src.controllers.architecture_controller import architecture_controller
 from src.controllers.judge_controller import judge_controller
 from src.controllers.pitch_deck_controller import pitch_deck_controller
 from src.services.project_service import project_service
@@ -19,6 +20,7 @@ class WorkflowController:
             "status": "success",
             "roadmap": None,
             "research": None,
+            "architecture": None,
             "judge": None,
             "pitch_deck": None,
             "errors": {},
@@ -60,6 +62,24 @@ class WorkflowController:
             result["errors"]["research"] = str(e)
 
         # ---------------------------------
+        # Architecture
+        # ---------------------------------
+
+        try:
+
+            result["architecture"] = (
+                architecture_controller.generate_architecture(
+                    roadmap_json,
+                    result["research"].model_dump_json(indent=2),
+                )
+            )
+
+        except Exception as e:
+
+            result["status"] = "partial_success"
+            result["errors"]["architecture"] = str(e)
+
+        # ---------------------------------
         # Judge
         # ---------------------------------
 
@@ -97,6 +117,7 @@ class WorkflowController:
 
         print("Roadmap:", roadmap is not None)
         print("Research:", result["research"] is not None)
+        print("Architecture:", result["architecture"] is not None)
         print("Judge:", result["judge"] is not None)
         print("Pitch:", result["pitch_deck"] is not None)
         
@@ -111,6 +132,7 @@ class WorkflowController:
                 idea=idea,
                 roadmap=roadmap,
                 research=result["research"],
+                architecture=result["architecture"],
                 judge=result["judge"],
                 pitch_deck=result["pitch_deck"],
             )

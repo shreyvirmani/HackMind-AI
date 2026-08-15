@@ -16,6 +16,8 @@ class WorkflowState:
 
     research: str = "waiting"
 
+    architecture: str = "waiting"
+
     judge: str = "waiting"
 
     pitch: str = "waiting"

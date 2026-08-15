@@ -1,3 +1,5 @@
+import re
+
 from reportlab.platypus import (
     Paragraph,
     Spacer,
@@ -132,78 +134,61 @@ def create_card(
     heading,
     content,
 ):
+    """
+    Renders a titled card with a background box and border.
+
+    IMPORTANT: `content` is split into one Table row per line
+    (splitting on "<br/>", the convention used throughout this
+    codebase for joining bullet lists). This is not just cosmetic --
+    ReportLab Tables can only split BETWEEN rows, never WITHIN a
+    single cell's Paragraph. Putting the entire body in one giant
+    Paragraph/row meant any unusually long AI-generated list (many
+    roadmap tasks, many features, etc.) could produce a cell taller
+    than a full page, which is unrecoverable and crashes PDF
+    generation outright (LayoutError: "... too large on page ...").
+    Splitting into many small rows lets the table flow across page
+    boundaries naturally, no matter how long the content gets.
+    """
+
+    content_str = "" if content is None else str(content)
+
+    # Split on <br/>, tolerating <br>, <br />, <BR/> etc.
+    lines = re.split(r"<br\s*/?>", content_str, flags=re.IGNORECASE)
+    lines = [line.strip() for line in lines if line.strip()]
+
+    if not lines:
+        lines = [""]
+
+    rows = [
+        [Paragraph(str(heading), REPORT_STYLES["card_title"])]
+    ]
+
+    for line in lines:
+        rows.append([Paragraph(line, REPORT_STYLES["body"])])
 
     table = Table(
-        [
-            [
-                Paragraph(
-                    str(heading),
-                    REPORT_STYLES["card_title"]
-                )
-            ],
-
-            [
-                Paragraph(
-                    str(content),
-                    REPORT_STYLES["body"]
-                )
-            ],
-        ],
-
+        rows,
         colWidths=[7.0 * inch],
     )
 
+    n_rows = len(rows)
 
-    table.setStyle(
-        TableStyle(
-            [
+    style_cmds = [
+        ("BACKGROUND", (0, 0), (-1, -1), CARD_BG),
+        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+        ("LEFTPADDING", (0, 0), (-1, -1), 16),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 16),
+        # Tight padding between internal rows so multiple short lines
+        # don't look like separate cards stacked together...
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        # ...but generous padding at the very top and very bottom of
+        # the whole card, matching the original single-block look.
+        ("TOPPADDING", (0, 0), (0, 0), 14),
+        ("BOTTOMPADDING", (0, n_rows - 1), (0, n_rows - 1), 14),
+    ]
 
-                (
-                    "BACKGROUND",
-                    (0,0),
-                    (-1,-1),
-                    CARD_BG
-                ),
-
-                (
-                    "BOX",
-                    (0,0),
-                    (-1,-1),
-                    0.5,
-                    BORDER
-                ),
-
-                (
-                    "BOTTOMPADDING",
-                    (0,0),
-                    (-1,-1),
-                    14
-                ),
-
-                (
-                    "TOPPADDING",
-                    (0,0),
-                    (-1,-1),
-                    14
-                ),
-
-                (
-                    "LEFTPADDING",
-                    (0,0),
-                    (-1,-1),
-                    16
-                ),
-
-                (
-                    "RIGHTPADDING",
-                    (0,0),
-                    (-1,-1),
-                    16
-                ),
-
-            ]
-        )
-    )
+    table.setStyle(TableStyle(style_cmds))
 
     return table
 

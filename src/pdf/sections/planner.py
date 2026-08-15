@@ -365,6 +365,15 @@ class PlannerSection:
 
 
                 story.append(
+
+                    create_card(
+                        phase_name or "Development Phase",
+                        task_text
+                    )
+
+                )
+
+                story.append(
                     space(14)
                 )
 

@@ -7,6 +7,7 @@ from src.services.subscription_service import subscription_service
 
 from src.controllers.planner_controller import planner_controller
 from src.controllers.research_controller import research_controller
+from src.controllers.architecture_controller import architecture_controller
 from src.controllers.judge_controller import judge_controller
 from src.controllers.pitch_deck_controller import pitch_deck_controller
 
@@ -74,6 +75,34 @@ class WorkflowRunner:
             )
 
             # --------------------------
+            # Architecture
+            # --------------------------
+
+            workflow.architecture = "running"
+
+            await manager.send(
+                workflow.workflow_id,
+                {
+                    "type": "architecture_started"
+                },
+            )
+
+            architecture = await asyncio.to_thread(
+                architecture_controller.generate_architecture,
+                roadmap_json,
+                research.model_dump_json(indent=2),
+            )
+
+            workflow.architecture = "completed"
+
+            await manager.send(
+                workflow.workflow_id,
+                {
+                    "type": "architecture_completed"
+                },
+            )
+
+            # --------------------------
             # Judge
             # --------------------------
 
@@ -137,6 +166,7 @@ class WorkflowRunner:
                 idea=workflow.idea,
                 roadmap=roadmap,
                 research=research,
+                architecture=architecture,
                 judge=judge,
                 pitch_deck=pitch,
             )

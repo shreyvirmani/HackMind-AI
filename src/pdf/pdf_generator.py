@@ -30,6 +30,10 @@ from src.pdf.sections.research import (
     research_section,
 )
 
+from src.pdf.sections.architecture import (
+    architecture_section,
+)
+
 
 from src.pdf.sections.judge import (
     judge_section,
@@ -214,6 +218,14 @@ class PDFGenerator:
 
                 project.research
                 if project.research
+                else {}
+
+            ),
+
+            architecture_section.build(
+
+                project.architecture
+                if project.architecture
                 else {}
 
             ),

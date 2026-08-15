@@ -10,6 +10,7 @@ class ProjectService:
         idea,
         roadmap,
         research,
+        architecture,
         judge,
         pitch_deck,
     ):
@@ -23,6 +24,7 @@ class ProjectService:
                 idea=idea,
                 roadmap=roadmap.model_dump() if roadmap else {},
                 research=research.model_dump() if research else {},
+                architecture=architecture.model_dump() if architecture else {},
                 judge=judge.model_dump() if judge else {},
                 pitch_deck=pitch_deck.model_dump() if pitch_deck else {},
             )

@@ -1,13 +1,14 @@
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, ValidationError
 
 from src.services.project_service import project_service
 from src.auth.supabase_auth import get_current_user
 from src.services.subscription_service import require_pro
 from src.pdf.pdf_generator import PDFGenerator
+from src.services.bootstrap_prompt_service import bootstrap_prompt_service
 
 
 router = APIRouter(
@@ -53,6 +54,22 @@ def get_project(
 
 
     return project
+
+
+@router.get("/{project_id}/bootstrap-prompt", response_class=PlainTextResponse)
+def generate_bootstrap_prompt(
+    project_id: int,
+    current_user=Depends(get_current_user),
+):
+    project = project_service.get_project(
+        project_id=project_id,
+        user_id=current_user["id"],
+    )
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    return bootstrap_prompt_service.generate(project)
 
 
 

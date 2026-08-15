@@ -170,6 +170,11 @@ class Project(Base):
         nullable=False
     )
 
+    architecture = Column(
+        JSON,
+         nullable=True
+    )
+
     overall_score = Column(
         Float,
         default=0
