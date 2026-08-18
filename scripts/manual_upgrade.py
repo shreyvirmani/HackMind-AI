@@ -1,11 +1,16 @@
 """
-One-off manual Pro upgrade for a specific user_id.
+One-off manual plan upgrade for a specific user_id.
 
 Usage:
-    python scripts/manual_upgrade.py <user_id> [months]
+    python scripts/manual_upgrade.py <user_id> [plan] [months]
 
-Example:
-    python scripts/manual_upgrade.py 948927ac-f86a-4aef-9402-be46424bc579 1
+plan defaults to "pro" if omitted, for backwards compatibility with
+the original Pro-only version of this script. Valid values: pro, max.
+
+Examples:
+    python scripts/manual_upgrade.py 948927ac-f86a-4aef-9402-be46424bc579
+    python scripts/manual_upgrade.py 948927ac-f86a-4aef-9402-be46424bc579 max
+    python scripts/manual_upgrade.py 948927ac-f86a-4aef-9402-be46424bc579 pro 3
 
 On Railway, run this against your deployed database with:
     railway run python scripts/manual_upgrade.py 948927ac-f86a-4aef-9402-be46424bc579
@@ -23,19 +28,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.connection import SessionLocal
 from database.repository import subscription_repository
+from database.models import PLAN_PRO, PLAN_MAX
 
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python scripts/manual_upgrade.py <user_id> [months]")
+        print("Usage: python scripts/manual_upgrade.py <user_id> [plan] [months]")
         sys.exit(1)
 
     user_id = sys.argv[1]
-    months = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+    plan = sys.argv[2] if len(sys.argv) > 2 else PLAN_PRO
+    months = int(sys.argv[3]) if len(sys.argv) > 3 else 1
+
+    if plan not in (PLAN_PRO, PLAN_MAX):
+        print(f"Invalid plan {plan!r} -- must be 'pro' or 'max'.")
+        sys.exit(1)
 
     db = SessionLocal()
     try:
-        sub = subscription_repository.upgrade_to_pro(db, user_id, months=months)
+        sub = subscription_repository.upgrade_plan(db, user_id, plan, months=months)
 
         print("Upgraded successfully:")
         print(f"  user_id:    {sub.user_id}")

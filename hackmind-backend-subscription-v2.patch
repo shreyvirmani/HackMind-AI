@@ -1,0 +1,983 @@
+diff --git a/api/main.py b/api/main.py
+index 34afd48..de09d45 100644
+--- a/api/main.py
++++ b/api/main.py
+@@ -10,6 +10,7 @@ from api.routes.ideas import router as ideas_router
+ 
+ from database.connection import engine, Base
+ from database import models
++from database.migrations import run_startup_migrations
+ 
+ from websocket_manager import manager
+ 
+@@ -26,6 +27,11 @@ app = FastAPI(
+ 
+ Base.metadata.create_all(bind=engine)
+ 
++# Additive, idempotent column migrations for existing tables --
++# create_all() above only creates missing tables, it never alters
++# columns on ones that already exist. Safe to run on every startup.
++run_startup_migrations(engine)
++
+ 
+ # ===========================
+ # CORS Configuration
+diff --git a/api/routes/ideas.py b/api/routes/ideas.py
+index 3e10ad3..7560da2 100644
+--- a/api/routes/ideas.py
++++ b/api/routes/ideas.py
+@@ -1,7 +1,7 @@
+ from fastapi import APIRouter, Depends
+ from pydantic import BaseModel, Field
+ 
+-from src.auth.supabase_auth import get_current_user
++from src.services.subscription_service import require_pro
+ from src.controllers.idea_controller import idea_controller
+ 
+ 
+@@ -13,6 +13,6 @@ class IdeaRequest(BaseModel):
+ 
+ 
+ @router.post("/generate")
+-def generate_ideas(request: IdeaRequest, current_user=Depends(get_current_user)):
++def generate_ideas(request: IdeaRequest, current_user=Depends(require_pro)):
+     context = request.context.strip() or "Generate useful, original student and hackathon project ideas."
+     return idea_controller.generate(context)
+diff --git a/api/routes/payments.py b/api/routes/payments.py
+index 2d957ee..c3a777e 100644
+--- a/api/routes/payments.py
++++ b/api/routes/payments.py
+@@ -3,8 +3,9 @@ import json
+ import razorpay
+ import requests
+ from fastapi import APIRouter, Depends, HTTPException, Request
+-from pydantic import BaseModel
++from pydantic import BaseModel, field_validator
+ 
++from database.models import PLAN_PRO, PLAN_MAX
+ from src.config.settings import settings
+ from src.payments.razorpay_client import client, is_configured
+ from src.auth.supabase_auth import get_current_user
+@@ -21,6 +22,16 @@ router = APIRouter(
+ )
+ 
+ 
++# Server-side price list. The frontend only ever sends a plan
++# identifier ("pro" / "max") -- it never sends an amount, and even if
++# it did, the amount below (not anything from the request body) is
++# what gets sent to Razorpay and stored on the Payment record.
++PLAN_PRICES_INR = {
++    PLAN_PRO: settings.PRO_PLAN_PRICE_INR,
++    PLAN_MAX: settings.MAX_PLAN_PRICE_INR,
++}
++
++
+ def _require_configured():
+     if not is_configured():
+         raise HTTPException(
+@@ -30,8 +41,18 @@ def _require_configured():
+ 
+ 
+ class CreateOrderRequest(BaseModel):
++    plan: str = PLAN_PRO
+     months: int = 1
+ 
++    @field_validator("plan")
++    @classmethod
++    def plan_must_be_purchasable(cls, value: str) -> str:
++        if value not in PLAN_PRICES_INR:
++            raise ValueError(
++                f"plan must be one of {sorted(PLAN_PRICES_INR)}, got {value!r}"
++            )
++        return value
++
+ 
+ class VerifyPaymentRequest(BaseModel):
+     razorpay_order_id: str
+@@ -45,14 +66,17 @@ def create_order(
+     current_user=Depends(get_current_user),
+ ):
+     """
+-    Step 1 of checkout: create a Razorpay order for the Pro plan and
+-    return it to the frontend, which opens Razorpay Checkout with it.
++    Step 1 of checkout: create a Razorpay order for the requested plan
++    (Pro or Max) and return it to the frontend, which opens Razorpay
++    Checkout with it. The amount is looked up server-side from
++    PLAN_PRICES_INR -- the client only ever picks *which* plan, never
++    the price.
+     """
+ 
+     _require_configured()
+ 
+     months = max(1, request.months)
+-    amount_paise = settings.PRO_PLAN_PRICE_INR * 100 * months
++    amount_paise = PLAN_PRICES_INR[request.plan] * 100 * months
+ 
+     try:
+         order = client.order.create(
+@@ -62,6 +86,7 @@ def create_order(
+                 "payment_capture": 1,
+                 "notes": {
+                     "user_id": current_user["id"],
++                    "plan": request.plan,
+                     "months": str(months),
+                 },
+             },
+@@ -94,8 +119,16 @@ def create_order(
+             user_id=current_user["id"],
+             razorpay_order_id=order["id"],
+             amount=amount_paise,
++            plan=request.plan,
++            months=months,
+             currency="INR",
+         )
++    except Exception as e:
++        logger.error(f"Failed to persist payment order record: {e}")
++        raise HTTPException(
++            status_code=500,
++            detail="Could not create payment order. Please try again.",
++        )
+     finally:
+         db.close()
+ 
+@@ -104,6 +137,7 @@ def create_order(
+         "amount": amount_paise,
+         "currency": "INR",
+         "key": settings.RAZORPAY_KEY_ID,
++        "plan": request.plan,
+     }
+ 
+ 
+@@ -116,9 +150,12 @@ def verify_payment(
+     Step 2 of checkout: the frontend calls this immediately after
+     Razorpay Checkout succeeds, with the three values Razorpay's JS
+     SDK returns. We verify the signature server-side before granting
+-    Pro access -- never trust a "success" callback from the client
+-    alone. The webhook below is the authoritative backstop in case
+-    this call never arrives (tab closed, network drop, etc).
++    any access -- never trust a "success" callback from the client
++    alone. Which plan gets granted is read back from the Payment row
++    created in /create-order (itself set from a server-side price
++    list), never from anything in this request. The webhook below is
++    the authoritative backstop in case this call never arrives (tab
++    closed, network drop, etc).
+     """
+ 
+     _require_configured()
+@@ -151,15 +188,18 @@ def verify_payment(
+         if not payment or payment.user_id != current_user["id"]:
+             raise HTTPException(status_code=404, detail="Order not found.")
+ 
++        plan = payment.plan
++        months = payment.months
++
+         payment_repository.mark_paid(
+             db, request.razorpay_order_id, request.razorpay_payment_id
+         )
+     finally:
+         db.close()
+ 
+-    subscription_service.upgrade_to_pro(current_user["id"], months=1)
++    subscription_service.upgrade_plan(current_user["id"], plan=plan, months=months)
+ 
+-    return {"status": "success", "plan": "pro"}
++    return {"status": "success", "plan": plan}
+ 
+ 
+ @router.post("/webhook")
+@@ -169,7 +209,9 @@ async def razorpay_webhook(request: Request):
+     from its servers when a payment completes, independent of whether
+     the user's browser tab is still open. Configure this URL in the
+     Razorpay dashboard under Webhooks, subscribed to
+-    'payment.captured'.
++    'payment.captured'. Like /verify, the plan and duration granted
++    come from the Payment row (set server-side at order-creation
++    time), never from the webhook payload itself.
+     """
+ 
+     body = await request.body()
+@@ -204,13 +246,20 @@ async def razorpay_webhook(request: Request):
+             payment = payment_repository.get_by_order_id(db, order_id)
+ 
+             if payment and payment.status != "paid":
++                plan = payment.plan
++                months = payment.months
++                user_id = payment.user_id
++
+                 payment_repository.mark_paid(db, order_id, payment_id)
+-                subscription_service.upgrade_to_pro(payment.user_id, months=1)
++                subscription_service.upgrade_plan(user_id, plan=plan, months=months)
+                 logger.info(
+-                    f"Webhook upgraded user {payment.user_id} to Pro "
++                    f"Webhook upgraded user {user_id} to {plan} "
+                     f"via order {order_id}."
+                 )
++        except Exception as e:
++            logger.error(f"Webhook processing failed for order {order_id}: {e}")
++            raise HTTPException(status_code=500, detail="Webhook processing failed.")
+         finally:
+             db.close()
+ 
+-    return {"status": "ok"}
+\ No newline at end of file
++    return {"status": "ok"}
+diff --git a/api/routes/projects.py b/api/routes/projects.py
+index 1022139..61013a6 100644
+--- a/api/routes/projects.py
++++ b/api/routes/projects.py
+@@ -59,7 +59,7 @@ def get_project(
+ @router.get("/{project_id}/bootstrap-prompt", response_class=PlainTextResponse)
+ def generate_bootstrap_prompt(
+     project_id: int,
+-    current_user=Depends(get_current_user),
++    current_user=Depends(require_pro),
+ ):
+     project = project_service.get_project(
+         project_id=project_id,
+diff --git a/api/routes/subscription.py b/api/routes/subscription.py
+index 99e41d2..98fa061 100644
+--- a/api/routes/subscription.py
++++ b/api/routes/subscription.py
+@@ -1,7 +1,8 @@
+-from fastapi import APIRouter, Depends
++from fastapi import APIRouter, Depends, HTTPException
+ 
+ from src.auth.supabase_auth import get_current_user
+ from src.services.subscription_service import subscription_service
++from src.utils.logger import logger
+ 
+ 
+ router = APIRouter(
+@@ -14,17 +15,29 @@ router = APIRouter(
+ def get_subscription(current_user=Depends(get_current_user)):
+     """
+     The frontend calls this on load to decide what to show/allow --
+-    e.g. "Projects Remaining 1/2", whether to show the PDF export
+-    button, whether AI suggestions are enabled, etc. This is a
+-    convenience for the UI; the backend still enforces limits
+-    independently on each protected route (require_pro /
+-    require_generation_quota), so this endpoint being wrong or
+-    skipped can't be used to bypass anything.
++    plan name, generations remaining, which premium features are
++    unlocked, etc. This is a convenience for the UI; the backend still
++    enforces limits independently on each protected route
++    (require_pro / require_max / require_generation_quota), so this
++    endpoint being wrong or skipped can't be used to bypass anything.
+     """
+ 
+-    status = subscription_service.get_status(current_user["id"])
++    try:
++        status = subscription_service.get_status(current_user["id"])
++    except Exception as e:
++        # Never let this bubble up as an opaque 500/503 -- log the
++        # real cause server-side (subscription_service.get_status
++        # already logs it too) and return a response the frontend can
++        # actually show something useful for.
++        logger.error(
++            f"GET /subscription failed for user {current_user.get('id')}: {e}"
++        )
++        raise HTTPException(
++            status_code=500,
++            detail="Could not load subscription status. Please try again.",
++        )
+ 
+     return {
+         "user_id": current_user["id"],
+         **status,
+-    }
+\ No newline at end of file
++    }
+diff --git a/database/migrations.py b/database/migrations.py
+new file mode 100644
+index 0000000..7a26bfe
+--- /dev/null
++++ b/database/migrations.py
+@@ -0,0 +1,47 @@
++"""
++Tiny additive-migration helper.
++
++This project doesn't use Alembic -- ``Base.metadata.create_all()`` in
++``api/main.py`` creates any *missing tables* on startup, but it will
++never add a *new column* to a table that already exists. The
++free/pro/max update adds two columns to the existing ``payments``
++table (``plan``, ``months``), so a plain ``create_all()`` alone would
++silently leave those columns missing on any database that already has
++a ``payments`` table -- i.e. every deployed environment.
++
++``run_startup_migrations`` below adds them with
++``ADD COLUMN IF NOT EXISTS`` (safe to run on every boot, on Postgres
++9.6+), backfilling existing rows with sensible defaults rather than
++touching or dropping anything. It does not create tables (create_all
++already does that) and it never deletes data.
++"""
++
++from sqlalchemy import text
++from sqlalchemy.engine import Engine
++
++from src.utils.logger import logger
++
++
++def run_startup_migrations(engine: Engine) -> None:
++    statements = [
++        # Existing payment rows all predate the Pro/Max split and
++        # were all for the (only, at the time) Pro plan.
++        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS plan VARCHAR(20) NOT NULL DEFAULT 'pro'",
++        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS months INTEGER NOT NULL DEFAULT 1",
++    ]
++
++    with engine.begin() as conn:
++        for statement in statements:
++            try:
++                conn.execute(text(statement))
++            except Exception as e:
++                # Non-Postgres dialects (e.g. SQLite in a quick local
++                # run) may not support IF NOT EXISTS the same way --
++                # log and continue rather than crashing startup, since
++                # create_all() already guarantees the column exists on
++                # a freshly-created table either way.
++                logger.warning(
++                    f"Startup migration statement skipped/failed "
++                    f"(likely already applied or unsupported dialect): "
++                    f"{statement!r} -- {e}"
++                )
+diff --git a/database/models.py b/database/models.py
+index 19d9aa7..322b12d 100644
+--- a/database/models.py
++++ b/database/models.py
+@@ -4,9 +4,38 @@ from datetime import datetime
+ from .connection import Base
+ 
+ 
++# --------------------------------------------------------------------
++# Centralized plan constants. Nothing else in the codebase should
++# hardcode "free" / "pro" / "max" or the numeric generation limits --
++# changing a limit later should mean editing exactly these lines.
++# --------------------------------------------------------------------
++
++PLAN_FREE = "free"
++PLAN_PRO = "pro"
++PLAN_MAX = "max"
++
++PLANS = (PLAN_FREE, PLAN_PRO, PLAN_MAX)
++
+ FREE_PLAN_WEEKLY_GENERATION_LIMIT = 3
++PRO_PLAN_WEEKLY_GENERATION_LIMIT = 15
++MAX_PLAN_WEEKLY_GENERATION_LIMIT = None  # None == unlimited
++
+ GENERATION_WINDOW_DAYS = 7
+ 
++STATUS_ACTIVE = "active"
++STATUS_EXPIRED = "expired"
++
++
++def generation_limit_for_plan(plan: str):
++    """Single lookup used everywhere a plan's weekly generation cap
++    is needed, so the free/pro/max numbers only ever live here."""
++
++    return {
++        PLAN_FREE: FREE_PLAN_WEEKLY_GENERATION_LIMIT,
++        PLAN_PRO: PRO_PLAN_WEEKLY_GENERATION_LIMIT,
++        PLAN_MAX: MAX_PLAN_WEEKLY_GENERATION_LIMIT,
++    }.get(plan, FREE_PLAN_WEEKLY_GENERATION_LIMIT)
++
+ 
+ class Subscription(Base):
+ 
+@@ -25,22 +54,27 @@ class Subscription(Base):
+         index=True,
+     )
+ 
++    # One of PLAN_FREE / PLAN_PRO / PLAN_MAX. Stored as a plain string
++    # (not a DB-level enum), so adding a future plan tier never
++    # requires a schema migration -- only a new constant above.
+     plan = Column(
+         String,
+         nullable=False,
+-        default="free",
++        default=PLAN_FREE,
+     )
+ 
+     status = Column(
+         String,
+         nullable=False,
+-        default="active",
++        default=STATUS_ACTIVE,
+     )
+ 
+-    # Generations used in the CURRENT weekly window. Free plan gets
+-    # FREE_PLAN_WEEKLY_GENERATION_LIMIT of these per rolling 7-day
+-    # window; the window resets (count -> 0) once
+-    # generation_window_start is more than GENERATION_WINDOW_DAYS old.
++    # Generations used in the CURRENT weekly window. Free gets
++    # FREE_PLAN_WEEKLY_GENERATION_LIMIT and Pro gets
++    # PRO_PLAN_WEEKLY_GENERATION_LIMIT of these per rolling 7-day
++    # window; Max is never capped. The window resets (count -> 0)
++    # once generation_window_start is more than GENERATION_WINDOW_DAYS
++    # old.
+     generations_used = Column(
+         Integer,
+         nullable=False,
+@@ -73,7 +107,10 @@ class Payment(Base):
+     """Audit trail of Razorpay orders/payments, for support &
+     reconciliation. Not required for enforcement (Subscription is the
+     source of truth for access), but invaluable when a user disputes
+-    a charge or a webhook is missed."""
++    a charge or a webhook is missed. Also records exactly which plan
++    and duration were paid for, so payment verification never has to
++    trust anything the client sends -- it re-derives the plan from
++    this row alone."""
+ 
+     __tablename__ = "payments"
+ 
+@@ -112,6 +149,22 @@ class Payment(Base):
+         default="INR",
+     )
+ 
++    # Which plan this order was created for (PLAN_PRO / PLAN_MAX).
++    # Set once, server-side, at order-creation time -- verification
++    # and the webhook both read it back from here rather than trusting
++    # anything supplied by the client at verification time.
++    plan = Column(
++        String,
++        nullable=False,
++        default=PLAN_PRO,
++    )
++
++    months = Column(
++        Integer,
++        nullable=False,
++        default=1,
++    )
++
+     status = Column(
+         String,
+         nullable=False,
+diff --git a/database/repository.py b/database/repository.py
+index be158a3..c9fc2b8 100644
+--- a/database/repository.py
++++ b/database/repository.py
+@@ -6,7 +6,11 @@ from .models import (
+     Project,
+     Subscription,
+     Payment,
+-    FREE_PLAN_WEEKLY_GENERATION_LIMIT,
++    PLAN_FREE,
++    PLAN_PRO,
++    PLAN_MAX,
++    STATUS_ACTIVE,
++    STATUS_EXPIRED,
+     GENERATION_WINDOW_DAYS,
+ )
+ 
+@@ -27,8 +31,8 @@ class SubscriptionRepository:
+         # with a fresh weekly generation window starting now.
+         sub = Subscription(
+             user_id=user_id,
+-            plan="free",
+-            status="active",
++            plan=PLAN_FREE,
++            status=STATUS_ACTIVE,
+             generations_used=0,
+             generation_window_start=datetime.utcnow(),
+         )
+@@ -45,9 +49,11 @@ class SubscriptionRepository:
+         sub: Subscription
+     ) -> Subscription:
+         """
+-        Free-plan generations are capped per rolling 7-day window,
+-        not lifetime. If the current window has expired, reset the
+-        counter and start a new window from now.
++        Free/Pro generations are capped per rolling 7-day window, not
++        lifetime (Max is never capped, but its counter still rolls
++        over the same way for visibility/analytics). If the current
++        window has expired, reset the counter and start a new window
++        from now.
+         """
+ 
+         window_start = (
+@@ -86,17 +92,25 @@ class SubscriptionRepository:
+ 
+         return sub
+ 
+-    def upgrade_to_pro(
++    def upgrade_plan(
+         self,
+         db: Session,
+         user_id: str,
+-        months: int = 1
++        plan: str,
++        months: int = 1,
+     ) -> Subscription:
++        """Grants `plan` (PLAN_PRO or PLAN_MAX) for `months` months
++        from now. Used by both payment verification and the webhook,
++        so upgrading is always this one code path regardless of which
++        of those fired first."""
++
++        if plan not in (PLAN_PRO, PLAN_MAX):
++            raise ValueError(f"upgrade_plan() called with invalid plan: {plan!r}")
+ 
+         sub = self.get_or_create(db, user_id)
+ 
+-        sub.plan = "pro"
+-        sub.status = "active"
++        sub.plan = plan
++        sub.status = STATUS_ACTIVE
+         sub.expires_at = (
+             datetime.utcnow()
+             + timedelta(days=30 * months)
+@@ -107,6 +121,17 @@ class SubscriptionRepository:
+ 
+         return sub
+ 
++    def upgrade_to_pro(
++        self,
++        db: Session,
++        user_id: str,
++        months: int = 1
++    ) -> Subscription:
++        """Kept for backwards compatibility (manual_upgrade.py and any
++        external callers) -- thin wrapper over upgrade_plan()."""
++
++        return self.upgrade_plan(db, user_id, PLAN_PRO, months)
++
+     def expire_if_needed(
+         self,
+         db: Session,
+@@ -114,17 +139,18 @@ class SubscriptionRepository:
+     ) -> Subscription:
+ 
+         """
+-        Pro plans are time-boxed -- if expires_at has passed,
+-        drop back to Free instead of silently keeping Pro access forever.
++        Pro and Max plans are time-boxed -- if expires_at has passed,
++        drop back to Free instead of silently keeping premium access
++        forever.
+         """
+ 
+         if (
+-            sub.plan == "pro"
++            sub.plan in (PLAN_PRO, PLAN_MAX)
+             and sub.expires_at is not None
+             and sub.expires_at < datetime.utcnow()
+         ):
+-            sub.plan = "free"
+-            sub.status = "expired"
++            sub.plan = PLAN_FREE
++            sub.status = STATUS_EXPIRED
+ 
+             db.commit()
+             db.refresh(sub)
+@@ -143,6 +169,8 @@ class PaymentRepository:
+         user_id: str,
+         razorpay_order_id: str,
+         amount: int,
++        plan: str,
++        months: int = 1,
+         currency: str = "INR",
+     ) -> Payment:
+ 
+@@ -151,6 +179,8 @@ class PaymentRepository:
+             razorpay_order_id=razorpay_order_id,
+             amount=amount,
+             currency=currency,
++            plan=plan,
++            months=months,
+             status="created",
+         )
+ 
+diff --git a/scripts/manual_upgrade.py b/scripts/manual_upgrade.py
+index 70727b1..942ab41 100644
+--- a/scripts/manual_upgrade.py
++++ b/scripts/manual_upgrade.py
+@@ -1,11 +1,16 @@
+ """
+-One-off manual Pro upgrade for a specific user_id.
++One-off manual plan upgrade for a specific user_id.
+ 
+ Usage:
+-    python scripts/manual_upgrade.py <user_id> [months]
++    python scripts/manual_upgrade.py <user_id> [plan] [months]
+ 
+-Example:
+-    python scripts/manual_upgrade.py 948927ac-f86a-4aef-9402-be46424bc579 1
++plan defaults to "pro" if omitted, for backwards compatibility with
++the original Pro-only version of this script. Valid values: pro, max.
++
++Examples:
++    python scripts/manual_upgrade.py 948927ac-f86a-4aef-9402-be46424bc579
++    python scripts/manual_upgrade.py 948927ac-f86a-4aef-9402-be46424bc579 max
++    python scripts/manual_upgrade.py 948927ac-f86a-4aef-9402-be46424bc579 pro 3
+ 
+ On Railway, run this against your deployed database with:
+     railway run python scripts/manual_upgrade.py 948927ac-f86a-4aef-9402-be46424bc579
+@@ -23,19 +28,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ 
+ from database.connection import SessionLocal
+ from database.repository import subscription_repository
++from database.models import PLAN_PRO, PLAN_MAX
+ 
+ 
+ def main():
+     if len(sys.argv) < 2:
+-        print("Usage: python scripts/manual_upgrade.py <user_id> [months]")
++        print("Usage: python scripts/manual_upgrade.py <user_id> [plan] [months]")
+         sys.exit(1)
+ 
+     user_id = sys.argv[1]
+-    months = int(sys.argv[2]) if len(sys.argv) > 2 else 1
++    plan = sys.argv[2] if len(sys.argv) > 2 else PLAN_PRO
++    months = int(sys.argv[3]) if len(sys.argv) > 3 else 1
++
++    if plan not in (PLAN_PRO, PLAN_MAX):
++        print(f"Invalid plan {plan!r} -- must be 'pro' or 'max'.")
++        sys.exit(1)
+ 
+     db = SessionLocal()
+     try:
+-        sub = subscription_repository.upgrade_to_pro(db, user_id, months=months)
++        sub = subscription_repository.upgrade_plan(db, user_id, plan, months=months)
+ 
+         print("Upgraded successfully:")
+         print(f"  user_id:    {sub.user_id}")
+@@ -47,4 +58,4 @@ def main():
+ 
+ 
+ if __name__ == "__main__":
+-    main()
+\ No newline at end of file
++    main()
+diff --git a/src/config/settings.py b/src/config/settings.py
+index 6c4ac15..61df602 100644
+--- a/src/config/settings.py
++++ b/src/config/settings.py
+@@ -49,6 +49,7 @@ class Settings(BaseSettings):
+     RAZORPAY_KEY_SECRET: str = ""
+     RAZORPAY_WEBHOOK_SECRET: str = ""
+     PRO_PLAN_PRICE_INR: int = 99  # rupees; charged as paise (x100) to Razorpay
++    MAX_PLAN_PRICE_INR: int = 299  # rupees; charged as paise (x100) to Razorpay
+ 
+     LOG_LEVEL: str = "INFO"
+ 
+diff --git a/src/services/subscription_service.py b/src/services/subscription_service.py
+index 653d0b8..b83ca6d 100644
+--- a/src/services/subscription_service.py
++++ b/src/services/subscription_service.py
+@@ -8,102 +8,187 @@ from database.repository import (
+     project_repository,
+ )
+ from database.models import (
++    PLAN_PRO,
++    PLAN_MAX,
++    STATUS_ACTIVE,
+     FREE_PLAN_WEEKLY_GENERATION_LIMIT,
++    PRO_PLAN_WEEKLY_GENERATION_LIMIT,
+     GENERATION_WINDOW_DAYS,
++    generation_limit_for_plan,
+ )
+ 
+ from src.auth.supabase_auth import get_current_user
++from src.utils.logger import logger
+ 
+ 
+ class SubscriptionService:
+     """
+     Single source of truth for what a user's plan allows. Every
+     premium-gated route depends on one of the functions below rather
+-    than checking `current_user` directly, so the free/pro rules live
+-    in exactly one place.
++    than checking `current_user` directly, so the free/pro/max rules
++    live in exactly one place.
+ 
+     Free plan: FREE_PLAN_WEEKLY_GENERATION_LIMIT generations per
+     rolling GENERATION_WINDOW_DAYS-day window (resets on a rolling
+-    basis, not a fixed calendar day). No PDF export, no AI
+-    suggestions.
+-    Pro plan: unlimited everything, time-boxed by `expires_at`.
++    basis, not a fixed calendar day). No premium features.
++    Pro plan: PRO_PLAN_WEEKLY_GENERATION_LIMIT generations per rolling
++    window, plus every premium feature. Time-boxed by `expires_at`.
++    Max plan: unlimited generations, plus every premium feature.
++    Time-boxed by `expires_at`.
++
++    "Premium" (Idea Generator, Architecture Agent, PDF export, LLM
++    Prompt Generator, AI Suggestions, project editing) means Pro OR
++    Max -- `is_pro()` below intentionally returns True for Max too,
++    since every route currently gated with `require_pro` is meant to
++    be unlocked by *either* paid tier. Max-exclusive behavior (never
++    being blocked by the generation quota) is handled separately in
++    `can_generate()`.
+     """
+ 
++    # ------------------------------------------------------------ #
++    # Plan lookup
++    # ------------------------------------------------------------ #
++
++    def _get_active_subscription(self, db, user_id: str):
++        sub = subscription_repository.get_or_create(db, user_id)
++        sub = subscription_repository.expire_if_needed(db, sub)
++        return sub
++
++    def get_plan(self, user_id: str) -> str:
++        """Returns the user's current plan, having already applied
++        expiry (an expired Pro/Max subscription reports as 'free')."""
++
++        db = SessionLocal()
++        try:
++            sub = self._get_active_subscription(db, user_id)
++            return sub.plan
++        finally:
++            db.close()
++
++    def is_pro(self, user_id: str) -> bool:
++        """True for an active Pro OR Max subscription. Use this (via
++        `require_pro`) to gate any feature available on both paid
++        tiers -- which, per the current plan matrix, is every premium
++        feature except unlimited generations."""
++
++        db = SessionLocal()
++        try:
++            sub = self._get_active_subscription(db, user_id)
++            return sub.plan in (PLAN_PRO, PLAN_MAX) and sub.status == STATUS_ACTIVE
++        finally:
++            db.close()
++
++    def is_max(self, user_id: str) -> bool:
++        """True only for an active Max subscription."""
++
++        db = SessionLocal()
++        try:
++            sub = self._get_active_subscription(db, user_id)
++            return sub.plan == PLAN_MAX and sub.status == STATUS_ACTIVE
++        finally:
++            db.close()
++
++    # ------------------------------------------------------------ #
++    # Generation quota
++    # ------------------------------------------------------------ #
++
++    def can_generate(self, user_id: str) -> bool:
++        db = SessionLocal()
++        try:
++            sub = self._get_active_subscription(db, user_id)
++
++            if sub.plan == PLAN_MAX:
++                return True
++
++            sub = subscription_repository.reset_window_if_needed(db, sub)
++            limit = generation_limit_for_plan(sub.plan)
++
++            return (sub.generations_used or 0) < limit
++        finally:
++            db.close()
++
++    def record_generation(self, user_id: str) -> None:
++        """Call this once a generation actually succeeds and is saved
++        -- not before, so a failed/errored workflow doesn't burn a
++        generation. Max users still get tracked (for visibility/
++        analytics) but are never blocked by it."""
++
++        db = SessionLocal()
++        try:
++            subscription_repository.increment_generations_used(db, user_id)
++        finally:
++            db.close()
++
++    # ------------------------------------------------------------ #
++    # Status payload for the frontend
++    # ------------------------------------------------------------ #
++
+     def get_status(self, user_id: str) -> dict:
+         db = SessionLocal()
+         try:
+-            sub = subscription_repository.get_or_create(db, user_id)
+-            sub = subscription_repository.expire_if_needed(db, sub)
++            sub = self._get_active_subscription(db, user_id)
+             sub = subscription_repository.reset_window_if_needed(db, sub)
+ 
+             saved_projects = len(
+                 project_repository.get_all_projects(db, user_id)
+             )
+ 
+-            is_pro = sub.plan == "pro" and sub.status == "active"
++            plan = sub.plan
++            is_pro = plan in (PLAN_PRO, PLAN_MAX) and sub.status == STATUS_ACTIVE
++            is_max = plan == PLAN_MAX and sub.status == STATUS_ACTIVE
++
++            limit = generation_limit_for_plan(plan)
+ 
+             window_start = sub.generation_window_start or sub.created_at
+             resets_at = (
+                 None
+-                if is_pro
++                if is_max
+                 else window_start + timedelta(days=GENERATION_WINDOW_DAYS)
+             )
+ 
+             return {
+-                "plan": sub.plan,
++                "plan": plan,
+                 "status": sub.status,
+                 "expires_at": sub.expires_at,
+                 "generations_used": sub.generations_used,
+-                "generations_limit": (
+-                    None if is_pro else FREE_PLAN_WEEKLY_GENERATION_LIMIT
+-                ),
++                "generations_limit": limit,  # None for Max == unlimited
+                 "generations_period": "week",
+                 "resets_at": resets_at,
+                 "saved_projects": saved_projects,
+                 "is_pro": is_pro,
++                "is_max": is_max,
++                "can_export_pdf": is_pro,
++                "can_generate_ideas": is_pro,
++                "can_generate_llm_prompt": is_pro,
++                "can_apply_ai_suggestions": is_pro,
++                "can_edit_projects": is_pro,
++                "can_use_architecture_agent": is_pro,
+             }
++        except Exception:
++            logger.exception(
++                f"Failed to compute subscription status for user {user_id}"
++            )
++            raise
+         finally:
+             db.close()
+ 
+-    def is_pro(self, user_id: str) -> bool:
+-        db = SessionLocal()
+-        try:
+-            sub = subscription_repository.get_or_create(db, user_id)
+-            sub = subscription_repository.expire_if_needed(db, sub)
+-            return sub.plan == "pro" and sub.status == "active"
+-        finally:
+-            db.close()
+-
+-    def can_generate(self, user_id: str) -> bool:
+-        if self.is_pro(user_id):
+-            return True
+-
+-        db = SessionLocal()
+-        try:
+-            sub = subscription_repository.get_or_create(db, user_id)
+-            sub = subscription_repository.reset_window_if_needed(db, sub)
+-            return (sub.generations_used or 0) < FREE_PLAN_WEEKLY_GENERATION_LIMIT
+-        finally:
+-            db.close()
+-
+-    def record_generation(self, user_id: str) -> None:
+-        """Call this once a generation actually succeeds and is saved
+-        -- not before, so a failed/errored workflow doesn't burn a
+-        Free-plan generation. Pro users still get tracked (for
+-        visibility/analytics) but are never blocked by it."""
++    # ------------------------------------------------------------ #
++    # Upgrades
++    # ------------------------------------------------------------ #
+ 
++    def upgrade_plan(self, user_id: str, plan: str, months: int = 1):
+         db = SessionLocal()
+         try:
+-            subscription_repository.increment_generations_used(db, user_id)
++            return subscription_repository.upgrade_plan(db, user_id, plan, months)
+         finally:
+             db.close()
+ 
+     def upgrade_to_pro(self, user_id: str, months: int = 1):
+-        db = SessionLocal()
+-        try:
+-            return subscription_repository.upgrade_to_pro(db, user_id, months)
+-        finally:
+-            db.close()
++        """Kept for backwards compatibility -- thin wrapper."""
++        return self.upgrade_plan(user_id, PLAN_PRO, months)
++
++    def upgrade_to_max(self, user_id: str, months: int = 1):
++        return self.upgrade_plan(user_id, PLAN_MAX, months)
+ 
+ 
+ subscription_service = SubscriptionService()
+@@ -115,15 +200,33 @@ subscription_service = SubscriptionService()
+ # ------------------------------------------------------------------ #
+ 
+ def require_pro(current_user=Depends(get_current_user)):
+-    """Use on routes that are Pro-only outright: PDF export, AI
+-    suggestions."""
++    """Use on routes gated to Pro AND Max: Idea Generator, Architecture
++    Agent, PDF export, LLM Prompt Generator, AI suggestions, project
++    editing."""
+ 
+     if not subscription_service.is_pro(current_user["id"]):
+         raise HTTPException(
+             status_code=402,
+             detail={
+                 "error": "Upgrade to Pro",
+-                "reason": "This feature is only available on the Pro plan.",
++                "reason": (
++                    "This feature is available on the Pro and Max plans."
++                ),
++            },
++        )
++
++    return current_user
++
++
++def require_max(current_user=Depends(get_current_user)):
++    """Use on routes gated to Max only."""
++
++    if not subscription_service.is_max(current_user["id"]):
++        raise HTTPException(
++            status_code=402,
++            detail={
++                "error": "Upgrade to Max",
++                "reason": "This feature is available on the Max plan only.",
+             },
+         )
+ 
+@@ -131,22 +234,35 @@ def require_pro(current_user=Depends(get_current_user)):
+ 
+ 
+ def require_generation_quota(current_user=Depends(get_current_user)):
+-    """Use on the project-generation route. Free plan gets
+-    FREE_PLAN_WEEKLY_GENERATION_LIMIT generations per rolling week;
+-    Pro is unlimited."""
++    """Use on the project-generation route. Free gets
++    FREE_PLAN_WEEKLY_GENERATION_LIMIT generations per rolling week,
++    Pro gets PRO_PLAN_WEEKLY_GENERATION_LIMIT, Max is unlimited."""
++
++    user_id = current_user["id"]
++
++    if not subscription_service.can_generate(user_id):
++        plan = subscription_service.get_plan(user_id)
++
++        if plan == PLAN_PRO:
++            reason = (
++                f"You have used all {PRO_PLAN_WEEKLY_GENERATION_LIMIT} "
++                f"generations this week. Upgrade to Max for unlimited "
++                f"generations."
++            )
++        else:
++            reason = (
++                f"You have used all {FREE_PLAN_WEEKLY_GENERATION_LIMIT} "
++                f"generations this week. Upgrade to Pro for "
++                f"{PRO_PLAN_WEEKLY_GENERATION_LIMIT} generations/week or "
++                f"Max for unlimited generations."
++            )
+ 
+-    if not subscription_service.can_generate(current_user["id"]):
+         raise HTTPException(
+             status_code=402,
+             detail={
+-                "error": "Upgrade to Pro",
+-                "reason": (
+-                    f"Free plan is limited to "
+-                    f"{FREE_PLAN_WEEKLY_GENERATION_LIMIT} project "
+-                    f"generations per week. Upgrade to Pro for "
+-                    f"unlimited generations."
+-                ),
++                "error": "Generation limit reached",
++                "reason": reason,
+             },
+         )
+ 
+-    return current_user
+\ No newline at end of file
++    return current_user

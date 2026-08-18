@@ -4,8 +4,37 @@ from datetime import datetime
 from .connection import Base
 
 
+# --------------------------------------------------------------------
+# Centralized plan constants. Nothing else in the codebase should
+# hardcode "free" / "pro" / "max" or the numeric generation limits --
+# changing a limit later should mean editing exactly these lines.
+# --------------------------------------------------------------------
+
+PLAN_FREE = "free"
+PLAN_PRO = "pro"
+PLAN_MAX = "max"
+
+PLANS = (PLAN_FREE, PLAN_PRO, PLAN_MAX)
+
 FREE_PLAN_WEEKLY_GENERATION_LIMIT = 3
+PRO_PLAN_WEEKLY_GENERATION_LIMIT = 15
+MAX_PLAN_WEEKLY_GENERATION_LIMIT = None  # None == unlimited
+
 GENERATION_WINDOW_DAYS = 7
+
+STATUS_ACTIVE = "active"
+STATUS_EXPIRED = "expired"
+
+
+def generation_limit_for_plan(plan: str):
+    """Single lookup used everywhere a plan's weekly generation cap
+    is needed, so the free/pro/max numbers only ever live here."""
+
+    return {
+        PLAN_FREE: FREE_PLAN_WEEKLY_GENERATION_LIMIT,
+        PLAN_PRO: PRO_PLAN_WEEKLY_GENERATION_LIMIT,
+        PLAN_MAX: MAX_PLAN_WEEKLY_GENERATION_LIMIT,
+    }.get(plan, FREE_PLAN_WEEKLY_GENERATION_LIMIT)
 
 
 class Subscription(Base):
@@ -25,22 +54,27 @@ class Subscription(Base):
         index=True,
     )
 
+    # One of PLAN_FREE / PLAN_PRO / PLAN_MAX. Stored as a plain string
+    # (not a DB-level enum), so adding a future plan tier never
+    # requires a schema migration -- only a new constant above.
     plan = Column(
         String,
         nullable=False,
-        default="free",
+        default=PLAN_FREE,
     )
 
     status = Column(
         String,
         nullable=False,
-        default="active",
+        default=STATUS_ACTIVE,
     )
 
-    # Generations used in the CURRENT weekly window. Free plan gets
-    # FREE_PLAN_WEEKLY_GENERATION_LIMIT of these per rolling 7-day
-    # window; the window resets (count -> 0) once
-    # generation_window_start is more than GENERATION_WINDOW_DAYS old.
+    # Generations used in the CURRENT weekly window. Free gets
+    # FREE_PLAN_WEEKLY_GENERATION_LIMIT and Pro gets
+    # PRO_PLAN_WEEKLY_GENERATION_LIMIT of these per rolling 7-day
+    # window; Max is never capped. The window resets (count -> 0)
+    # once generation_window_start is more than GENERATION_WINDOW_DAYS
+    # old.
     generations_used = Column(
         Integer,
         nullable=False,
@@ -73,7 +107,10 @@ class Payment(Base):
     """Audit trail of Razorpay orders/payments, for support &
     reconciliation. Not required for enforcement (Subscription is the
     source of truth for access), but invaluable when a user disputes
-    a charge or a webhook is missed."""
+    a charge or a webhook is missed. Also records exactly which plan
+    and duration were paid for, so payment verification never has to
+    trust anything the client sends -- it re-derives the plan from
+    this row alone."""
 
     __tablename__ = "payments"
 
@@ -110,6 +147,22 @@ class Payment(Base):
         String,
         nullable=False,
         default="INR",
+    )
+
+    # Which plan this order was created for (PLAN_PRO / PLAN_MAX).
+    # Set once, server-side, at order-creation time -- verification
+    # and the webhook both read it back from here rather than trusting
+    # anything supplied by the client at verification time.
+    plan = Column(
+        String,
+        nullable=False,
+        default=PLAN_PRO,
+    )
+
+    months = Column(
+        Integer,
+        nullable=False,
+        default=1,
     )
 
     status = Column(
