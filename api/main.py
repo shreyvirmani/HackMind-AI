@@ -10,6 +10,7 @@ from api.routes.ideas import router as ideas_router
 
 from database.connection import engine, Base
 from database import models
+from database.migrations import run_startup_migrations
 
 from websocket_manager import manager
 
@@ -25,6 +26,11 @@ app = FastAPI(
 # ===========================
 
 Base.metadata.create_all(bind=engine)
+
+# Additive, idempotent column migrations for existing tables --
+# create_all() above only creates missing tables, it never alters
+# columns on ones that already exist. Safe to run on every startup.
+run_startup_migrations(engine)
 
 
 # ===========================

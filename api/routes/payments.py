@@ -3,8 +3,9 @@ import json
 import razorpay
 import requests
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
+from database.models import PLAN_PRO, PLAN_MAX
 from src.config.settings import settings
 from src.payments.razorpay_client import client, is_configured
 from src.auth.supabase_auth import get_current_user
@@ -21,6 +22,16 @@ router = APIRouter(
 )
 
 
+# Server-side price list. The frontend only ever sends a plan
+# identifier ("pro" / "max") -- it never sends an amount, and even if
+# it did, the amount below (not anything from the request body) is
+# what gets sent to Razorpay and stored on the Payment record.
+PLAN_PRICES_INR = {
+    PLAN_PRO: settings.PRO_PLAN_PRICE_INR,
+    PLAN_MAX: settings.MAX_PLAN_PRICE_INR,
+}
+
+
 def _require_configured():
     if not is_configured():
         raise HTTPException(
@@ -30,7 +41,17 @@ def _require_configured():
 
 
 class CreateOrderRequest(BaseModel):
+    plan: str = PLAN_PRO
     months: int = 1
+
+    @field_validator("plan")
+    @classmethod
+    def plan_must_be_purchasable(cls, value: str) -> str:
+        if value not in PLAN_PRICES_INR:
+            raise ValueError(
+                f"plan must be one of {sorted(PLAN_PRICES_INR)}, got {value!r}"
+            )
+        return value
 
 
 class VerifyPaymentRequest(BaseModel):
@@ -45,14 +66,17 @@ def create_order(
     current_user=Depends(get_current_user),
 ):
     """
-    Step 1 of checkout: create a Razorpay order for the Pro plan and
-    return it to the frontend, which opens Razorpay Checkout with it.
+    Step 1 of checkout: create a Razorpay order for the requested plan
+    (Pro or Max) and return it to the frontend, which opens Razorpay
+    Checkout with it. The amount is looked up server-side from
+    PLAN_PRICES_INR -- the client only ever picks *which* plan, never
+    the price.
     """
 
     _require_configured()
 
     months = max(1, request.months)
-    amount_paise = settings.PRO_PLAN_PRICE_INR * 100 * months
+    amount_paise = PLAN_PRICES_INR[request.plan] * 100 * months
 
     try:
         order = client.order.create(
@@ -62,6 +86,7 @@ def create_order(
                 "payment_capture": 1,
                 "notes": {
                     "user_id": current_user["id"],
+                    "plan": request.plan,
                     "months": str(months),
                 },
             },
@@ -94,7 +119,15 @@ def create_order(
             user_id=current_user["id"],
             razorpay_order_id=order["id"],
             amount=amount_paise,
+            plan=request.plan,
+            months=months,
             currency="INR",
+        )
+    except Exception as e:
+        logger.error(f"Failed to persist payment order record: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Could not create payment order. Please try again.",
         )
     finally:
         db.close()
@@ -104,6 +137,7 @@ def create_order(
         "amount": amount_paise,
         "currency": "INR",
         "key": settings.RAZORPAY_KEY_ID,
+        "plan": request.plan,
     }
 
 
@@ -116,9 +150,12 @@ def verify_payment(
     Step 2 of checkout: the frontend calls this immediately after
     Razorpay Checkout succeeds, with the three values Razorpay's JS
     SDK returns. We verify the signature server-side before granting
-    Pro access -- never trust a "success" callback from the client
-    alone. The webhook below is the authoritative backstop in case
-    this call never arrives (tab closed, network drop, etc).
+    any access -- never trust a "success" callback from the client
+    alone. Which plan gets granted is read back from the Payment row
+    created in /create-order (itself set from a server-side price
+    list), never from anything in this request. The webhook below is
+    the authoritative backstop in case this call never arrives (tab
+    closed, network drop, etc).
     """
 
     _require_configured()
@@ -151,15 +188,18 @@ def verify_payment(
         if not payment or payment.user_id != current_user["id"]:
             raise HTTPException(status_code=404, detail="Order not found.")
 
+        plan = payment.plan
+        months = payment.months
+
         payment_repository.mark_paid(
             db, request.razorpay_order_id, request.razorpay_payment_id
         )
     finally:
         db.close()
 
-    subscription_service.upgrade_to_pro(current_user["id"], months=1)
+    subscription_service.upgrade_plan(current_user["id"], plan=plan, months=months)
 
-    return {"status": "success", "plan": "pro"}
+    return {"status": "success", "plan": plan}
 
 
 @router.post("/webhook")
@@ -169,7 +209,9 @@ async def razorpay_webhook(request: Request):
     from its servers when a payment completes, independent of whether
     the user's browser tab is still open. Configure this URL in the
     Razorpay dashboard under Webhooks, subscribed to
-    'payment.captured'.
+    'payment.captured'. Like /verify, the plan and duration granted
+    come from the Payment row (set server-side at order-creation
+    time), never from the webhook payload itself.
     """
 
     body = await request.body()
@@ -204,12 +246,19 @@ async def razorpay_webhook(request: Request):
             payment = payment_repository.get_by_order_id(db, order_id)
 
             if payment and payment.status != "paid":
+                plan = payment.plan
+                months = payment.months
+                user_id = payment.user_id
+
                 payment_repository.mark_paid(db, order_id, payment_id)
-                subscription_service.upgrade_to_pro(payment.user_id, months=1)
+                subscription_service.upgrade_plan(user_id, plan=plan, months=months)
                 logger.info(
-                    f"Webhook upgraded user {payment.user_id} to Pro "
+                    f"Webhook upgraded user {user_id} to {plan} "
                     f"via order {order_id}."
                 )
+        except Exception as e:
+            logger.error(f"Webhook processing failed for order {order_id}: {e}")
+            raise HTTPException(status_code=500, detail="Webhook processing failed.")
         finally:
             db.close()
 

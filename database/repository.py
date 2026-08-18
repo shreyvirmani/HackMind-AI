@@ -6,7 +6,11 @@ from .models import (
     Project,
     Subscription,
     Payment,
-    FREE_PLAN_WEEKLY_GENERATION_LIMIT,
+    PLAN_FREE,
+    PLAN_PRO,
+    PLAN_MAX,
+    STATUS_ACTIVE,
+    STATUS_EXPIRED,
     GENERATION_WINDOW_DAYS,
 )
 
@@ -27,8 +31,8 @@ class SubscriptionRepository:
         # with a fresh weekly generation window starting now.
         sub = Subscription(
             user_id=user_id,
-            plan="free",
-            status="active",
+            plan=PLAN_FREE,
+            status=STATUS_ACTIVE,
             generations_used=0,
             generation_window_start=datetime.utcnow(),
         )
@@ -45,9 +49,11 @@ class SubscriptionRepository:
         sub: Subscription
     ) -> Subscription:
         """
-        Free-plan generations are capped per rolling 7-day window,
-        not lifetime. If the current window has expired, reset the
-        counter and start a new window from now.
+        Free/Pro generations are capped per rolling 7-day window, not
+        lifetime (Max is never capped, but its counter still rolls
+        over the same way for visibility/analytics). If the current
+        window has expired, reset the counter and start a new window
+        from now.
         """
 
         window_start = (
@@ -86,17 +92,25 @@ class SubscriptionRepository:
 
         return sub
 
-    def upgrade_to_pro(
+    def upgrade_plan(
         self,
         db: Session,
         user_id: str,
-        months: int = 1
+        plan: str,
+        months: int = 1,
     ) -> Subscription:
+        """Grants `plan` (PLAN_PRO or PLAN_MAX) for `months` months
+        from now. Used by both payment verification and the webhook,
+        so upgrading is always this one code path regardless of which
+        of those fired first."""
+
+        if plan not in (PLAN_PRO, PLAN_MAX):
+            raise ValueError(f"upgrade_plan() called with invalid plan: {plan!r}")
 
         sub = self.get_or_create(db, user_id)
 
-        sub.plan = "pro"
-        sub.status = "active"
+        sub.plan = plan
+        sub.status = STATUS_ACTIVE
         sub.expires_at = (
             datetime.utcnow()
             + timedelta(days=30 * months)
@@ -107,6 +121,17 @@ class SubscriptionRepository:
 
         return sub
 
+    def upgrade_to_pro(
+        self,
+        db: Session,
+        user_id: str,
+        months: int = 1
+    ) -> Subscription:
+        """Kept for backwards compatibility (manual_upgrade.py and any
+        external callers) -- thin wrapper over upgrade_plan()."""
+
+        return self.upgrade_plan(db, user_id, PLAN_PRO, months)
+
     def expire_if_needed(
         self,
         db: Session,
@@ -114,17 +139,18 @@ class SubscriptionRepository:
     ) -> Subscription:
 
         """
-        Pro plans are time-boxed -- if expires_at has passed,
-        drop back to Free instead of silently keeping Pro access forever.
+        Pro and Max plans are time-boxed -- if expires_at has passed,
+        drop back to Free instead of silently keeping premium access
+        forever.
         """
 
         if (
-            sub.plan == "pro"
+            sub.plan in (PLAN_PRO, PLAN_MAX)
             and sub.expires_at is not None
             and sub.expires_at < datetime.utcnow()
         ):
-            sub.plan = "free"
-            sub.status = "expired"
+            sub.plan = PLAN_FREE
+            sub.status = STATUS_EXPIRED
 
             db.commit()
             db.refresh(sub)
@@ -143,6 +169,8 @@ class PaymentRepository:
         user_id: str,
         razorpay_order_id: str,
         amount: int,
+        plan: str,
+        months: int = 1,
         currency: str = "INR",
     ) -> Payment:
 
@@ -151,6 +179,8 @@ class PaymentRepository:
             razorpay_order_id=razorpay_order_id,
             amount=amount,
             currency=currency,
+            plan=plan,
+            months=months,
             status="created",
         )
 

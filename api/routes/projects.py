@@ -59,7 +59,7 @@ def get_project(
 @router.get("/{project_id}/bootstrap-prompt", response_class=PlainTextResponse)
 def generate_bootstrap_prompt(
     project_id: int,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_pro),
 ):
     project = project_service.get_project(
         project_id=project_id,
