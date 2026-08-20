@@ -82,8 +82,27 @@ class WorkflowRunner:
         finally:
             db.close()
 
+    _STAGE_DATA_COLUMN = {
+        "planner": "roadmap_data",
+        "research": "research_data",
+        "architecture": "architecture_data",
+        "judge": "judge_data",
+        "pitch": "pitch_data",
+    }
+
     def _next_pending_stage(self, workflow) -> str | None:
         for stage in STAGE_ORDER:
+            data_column = self._STAGE_DATA_COLUMN[stage]
+
+            # A stage marked "completed" whose output never actually
+            # persisted (e.g. an already-affected row from before a
+            # fix to how stage output gets saved) would otherwise
+            # crash every later stage trying to read None data.
+            # Treat it as not-completed instead, so it simply runs
+            # again on the next /advance call.
+            if getattr(workflow, stage) == "completed" and getattr(workflow, data_column) is None:
+                return stage
+
             if getattr(workflow, stage) != "completed":
                 return stage
         return None

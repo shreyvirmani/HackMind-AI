@@ -514,6 +514,14 @@ class WorkflowRepository:
 
         return workflow
 
+    # The status column name and the data column name match for
+    # every stage EXCEPT planner: its status column is "planner" but
+    # its output is a Roadmap, stored in "roadmap_data" (a clearer
+    # name than "planner_data" for what the column actually holds).
+    _DATA_COLUMN = {
+        "planner": "roadmap_data",
+    }
+
     def save_stage_output(
         self,
         db: Session,
@@ -523,8 +531,10 @@ class WorkflowRepository:
         data: dict,
     ) -> Workflow:
 
+        data_column = self._DATA_COLUMN.get(stage, f"{stage}_data")
+
         setattr(workflow, stage, status)
-        setattr(workflow, f"{stage}_data", data)
+        setattr(workflow, data_column, data)
 
         db.commit()
         db.refresh(workflow)
