@@ -1,4 +1,4 @@
-from pathlib import Path
+from io import BytesIO
 
 from reportlab.platypus import (
     SimpleDocTemplate,
@@ -92,57 +92,24 @@ def add_page_number(canvas, doc):
 
 class PDFGenerator:
 
-
-    def __init__(self):
-
-        self.output_dir = Path(
-            "generated_reports"
-        )
-
-        self.output_dir.mkdir(
-            exist_ok=True
-        )
-
-
+    # Builds every report entirely in memory (BytesIO) -- no local
+    # file is ever written. Vercel's serverless filesystem is
+    # read-only outside /tmp, and even /tmp doesn't persist or share
+    # across invocations, so writing PDFs to disk (as this used to
+    # do, via a local "generated_reports" directory) would fail
+    # there. This also works identically on Railway; nothing here is
+    # platform-specific.
 
     def generate(
         self,
         project
     ):
 
-
-        filename = (
-
-            project.project_title
-
-            .replace(
-                " ",
-                "_"
-            )
-
-            +
-
-            "_Startup_Intelligence_Report.pdf"
-
-        )
-
-
-        output_path = (
-
-            self.output_dir
-
-            /
-
-            filename
-
-        )
-
-
+        buffer = BytesIO()
 
         doc = SimpleDocTemplate(
 
-            str(output_path),
-
+            buffer,
             pagesize=A4,
 
 
@@ -290,8 +257,9 @@ class PDFGenerator:
 
         )
 
+        buffer.seek(0)
 
-        return output_path
+        return buffer
 
 
 

@@ -72,8 +72,31 @@ app.include_router(ideas_router)
 
 
 # ===========================
+# Health Check
+# ===========================
+# Does not touch the database or any AI provider -- must stay fast
+# and dependency-free so it's useful as an uptime/readiness check on
+# either Railway or Vercel.
+
+@app.get("/health")
+def health():
+
+    return {
+        "status": "ok"
+    }
+
+
+# ===========================
 # WebSocket Endpoint
 # ===========================
+# NOTE: Works on Railway (one long-lived process). Vercel's Python
+# serverless runtime does not support persistent WebSocket
+# connections at all, so this route is unreachable there -- harmless
+# dead code on that platform, not an error. The frontend no longer
+# depends on it for workflow progress (see POST
+# /workflow/{id}/advance in api/routes/workflow.py), so this is kept
+# only for any other consumer that might still expect the route to
+# exist while running on Railway.
 
 @app.websocket("/ws/workflow/{workflow_id}")
 async def workflow_socket(

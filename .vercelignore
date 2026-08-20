@@ -1,0 +1,24 @@
+# Dead Streamlit prototype -- not part of the live FastAPI app, and
+# streamlit is no longer even in requirements.txt.
+app.py
+src/ui/
+
+# Old PDF output directory. No longer used at all (PDFGenerator now
+# builds entirely in memory), and it doesn't hurt to keep it out of
+# the deployment bundle regardless.
+generated_reports/
+
+# Stray migration artifact from an earlier merge, not part of the
+# app itself.
+hackmind-ai-upgrade/
+
+# Standard dev/VCS noise.
+.git
+.venv
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+.env
+.env.local

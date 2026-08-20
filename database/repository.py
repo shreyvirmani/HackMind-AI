@@ -6,6 +6,7 @@ from .models import (
     Project,
     Subscription,
     Payment,
+    Workflow,
     PLAN_FREE,
     PLAN_PRO,
     PLAN_MAX,
@@ -457,3 +458,107 @@ class ProjectRepository:
 
 
 project_repository = ProjectRepository()
+
+
+class WorkflowRepository:
+    """DB-backed replacement for the old in-memory WorkflowRegistry.
+    Every stage transition is committed immediately so any serverless
+    instance handling the next request sees the latest state."""
+
+    def create(
+        self,
+        db: Session,
+        workflow_id: str,
+        user_id: str,
+        idea: str,
+    ) -> Workflow:
+
+        workflow = Workflow(
+            id=workflow_id,
+            user_id=user_id,
+            idea=idea,
+        )
+
+        db.add(workflow)
+        db.commit()
+        db.refresh(workflow)
+
+        return workflow
+
+    def get(
+        self,
+        db: Session,
+        workflow_id: str,
+        user_id: str | None = None,
+    ) -> Workflow | None:
+
+        query = db.query(Workflow).filter(Workflow.id == workflow_id)
+
+        if user_id is not None:
+            query = query.filter(Workflow.user_id == user_id)
+
+        return query.first()
+
+    def set_stage_status(
+        self,
+        db: Session,
+        workflow: Workflow,
+        stage: str,
+        status: str,
+    ) -> Workflow:
+
+        setattr(workflow, stage, status)
+
+        db.commit()
+        db.refresh(workflow)
+
+        return workflow
+
+    def save_stage_output(
+        self,
+        db: Session,
+        workflow: Workflow,
+        stage: str,
+        status: str,
+        data: dict,
+    ) -> Workflow:
+
+        setattr(workflow, stage, status)
+        setattr(workflow, f"{stage}_data", data)
+
+        db.commit()
+        db.refresh(workflow)
+
+        return workflow
+
+    def mark_finished(
+        self,
+        db: Session,
+        workflow: Workflow,
+        project_id: str,
+    ) -> Workflow:
+
+        workflow.finished = True
+        workflow.project_id = project_id
+
+        db.commit()
+        db.refresh(workflow)
+
+        return workflow
+
+    def mark_failed(
+        self,
+        db: Session,
+        workflow: Workflow,
+        error: str,
+    ) -> Workflow:
+
+        workflow.error = error
+
+        db.commit()
+        db.refresh(workflow)
+
+        return workflow
+
+
+workflow_repository = WorkflowRepository()
