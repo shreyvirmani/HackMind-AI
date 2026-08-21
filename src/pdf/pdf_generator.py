@@ -7,91 +7,66 @@ from reportlab.platypus import (
 
 from reportlab.lib.pagesizes import A4
 
-
 from src.pdf.styles import PAGE_MARGIN
-
 
 from src.pdf.sections.cover import (
     build_cover_section,
 )
 
-
 from src.pdf.sections.executive_summary import (
     build_executive_summary,
 )
-
 
 from src.pdf.sections.planner import (
     planner_section,
 )
 
-
 from src.pdf.sections.research import (
     research_section,
 )
-
-from src.pdf.sections.architecture import (
-    architecture_section,
-)
-
 
 from src.pdf.sections.judge import (
     judge_section,
 )
 
-
 from src.pdf.sections.pitch import (
     pitch_deck_section,
 )
-
 
 from src.pdf.sections.appendix import (
     appendix_section,
 )
 
 
-
 # ======================================================
 # PAGE FOOTER
 # ======================================================
-
 
 def add_page_number(canvas, doc):
 
     canvas.saveState()
 
-
     width, height = A4
-
 
     canvas.setFont(
         "Helvetica",
         8
     )
 
-
     canvas.drawCentredString(
-
         width / 2,
-
         22,
-
         f"HackMind AI Copilot  •  Page {doc.page}"
-
     )
 
-
     canvas.restoreState()
-
 
 
 # ======================================================
 # PDF GENERATOR
 # ======================================================
 
-
 class PDFGenerator:
-
 
     def __init__(self):
 
@@ -104,39 +79,24 @@ class PDFGenerator:
         )
 
 
-
     def generate(
         self,
         project
     ):
 
-
         filename = (
-
             project.project_title
-
             .replace(
                 " ",
                 "_"
             )
-
-            +
-
-            "_Startup_Intelligence_Report.pdf"
-
+            + "_Startup_Intelligence_Report.pdf"
         )
-
 
         output_path = (
-
             self.output_dir
-
-            /
-
-            filename
-
+            / filename
         )
-
 
 
         doc = SimpleDocTemplate(
@@ -145,15 +105,10 @@ class PDFGenerator:
 
             pagesize=A4,
 
-
             leftMargin=PAGE_MARGIN,
-
             rightMargin=PAGE_MARGIN,
-
             topMargin=PAGE_MARGIN,
-
             bottomMargin=PAGE_MARGIN,
-
 
             title=project.project_title,
 
@@ -162,13 +117,10 @@ class PDFGenerator:
             subject=(
                 "AI Generated Startup Intelligence Report"
             )
-
         )
 
 
-
         story = []
-
 
 
         # ==================================================
@@ -176,33 +128,42 @@ class PDFGenerator:
         # ==================================================
 
         story.extend(
-
             build_cover_section(
                 project
             )
-
         )
-
 
         story.append(
             PageBreak()
         )
 
 
-
         # ==================================================
         # CONTENT SECTIONS
+        #
+        # TEMPORARY:
+        # Architecture section is disabled because the
+        # current architecture data is causing a ReportLab
+        # LayoutError from an oversized table cell.
+        #
+        # We will restore it after fixing the underlying
+        # table/Paragraph handling.
         # ==================================================
-
 
         sections = [
 
+            # ----------------------------------------------
+            # Executive Summary
+            # ----------------------------------------------
 
             build_executive_summary(
                 project
             ),
 
 
+            # ----------------------------------------------
+            # Planner / Roadmap
+            # ----------------------------------------------
 
             planner_section.build(
 
@@ -213,6 +174,9 @@ class PDFGenerator:
             ),
 
 
+            # ----------------------------------------------
+            # Research
+            # ----------------------------------------------
 
             research_section.build(
 
@@ -222,15 +186,25 @@ class PDFGenerator:
 
             ),
 
-            architecture_section.build(
 
-                project.architecture
-                if project.architecture
-                else {}
+            # ==================================================
+            # ARCHITECTURE TEMPORARILY DISABLED
+            # ==================================================
+            #
+            # architecture_section.build(
+            #
+            #     project.architecture
+            #     if project.architecture
+            #     else {}
+            #
+            # ),
+            #
+            # ==================================================
 
-            ),
 
-
+            # ----------------------------------------------
+            # Judge / Evaluation
+            # ----------------------------------------------
 
             judge_section.build(
 
@@ -241,6 +215,9 @@ class PDFGenerator:
             ),
 
 
+            # ----------------------------------------------
+            # Pitch Deck
+            # ----------------------------------------------
 
             pitch_deck_section.build(
 
@@ -251,6 +228,9 @@ class PDFGenerator:
             ),
 
 
+            # ----------------------------------------------
+            # Appendix
+            # ----------------------------------------------
 
             appendix_section.build(
                 project
@@ -259,13 +239,11 @@ class PDFGenerator:
         ]
 
 
-
         # ==================================================
         # ADD SECTIONS WITHOUT EMPTY PAGES
         # ==================================================
 
         for section in sections:
-
 
             if section:
 
@@ -274,11 +252,9 @@ class PDFGenerator:
                 )
 
 
-
         # ==================================================
-        # BUILD
+        # BUILD PDF
         # ==================================================
-
 
         doc.build(
 
@@ -294,5 +270,8 @@ class PDFGenerator:
         return output_path
 
 
+# ======================================================
+# SINGLE PDF GENERATOR INSTANCE
+# ======================================================
 
 pdf_generator = PDFGenerator()
