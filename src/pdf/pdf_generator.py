@@ -13,6 +13,34 @@ from src.pdf.sections.cover import (
     build_cover_section,
 )
 
+from src.pdf.sections.executive_summary import (
+    build_executive_summary,
+)
+
+from src.pdf.sections.planner import (
+    planner_section,
+)
+
+from src.pdf.sections.research import (
+    research_section,
+)
+
+from src.pdf.sections.architecture import (
+    architecture_section,
+)
+
+from src.pdf.sections.judge import (
+    judge_section,
+)
+
+from src.pdf.sections.pitch import (
+    pitch_deck_section,
+)
+
+from src.pdf.sections.appendix import (
+    appendix_section,
+)
+
 
 # ======================================================
 # PAGE FOOTER
@@ -55,10 +83,45 @@ class PDFGenerator:
         )
 
 
-    def generate(self, project):
+    def generate(
+        self,
+        project
+    ):
+
+        # ==================================================
+        # SAFE PROJECT TITLE
+        # ==================================================
+        #
+        # Prevent an accidentally huge project title from
+        # becoming an oversized ReportLab flowable.
+        #
+        # Normal project titles are left untouched.
+        # Extremely long titles are truncated only for the
+        # PDF filename/title.
+        # ==================================================
+
+        raw_title = str(
+            getattr(
+                project,
+                "project_title",
+                "HackMind AI Project"
+            )
+            or "HackMind AI Project"
+        )
+
+        safe_title = raw_title.strip()
+
+        if not safe_title:
+            safe_title = "HackMind AI Project"
+
+        # Keep the PDF metadata/title reasonable.
+        pdf_title = safe_title[:300]
+
+        # Keep filesystem filename reasonable.
+        filename_title = safe_title[:150]
 
         filename = (
-            str(project.project_title)
+            filename_title
             .replace(" ", "_")
             + "_Startup_Intelligence_Report.pdf"
         )
@@ -69,6 +132,10 @@ class PDFGenerator:
         )
 
 
+        # ==================================================
+        # DOCUMENT
+        # ==================================================
+
         doc = SimpleDocTemplate(
 
             str(output_path),
@@ -76,17 +143,21 @@ class PDFGenerator:
             pagesize=A4,
 
             leftMargin=PAGE_MARGIN,
+
             rightMargin=PAGE_MARGIN,
+
             topMargin=PAGE_MARGIN,
+
             bottomMargin=PAGE_MARGIN,
 
-            title=str(project.project_title),
+            title=pdf_title,
 
             author="HackMind AI Copilot",
 
             subject=(
                 "AI Generated Startup Intelligence Report"
             )
+
         )
 
 
@@ -94,49 +165,125 @@ class PDFGenerator:
 
 
         # ==================================================
-        # COVER
+        # PREMIUM COVER
         # ==================================================
 
-        cover = build_cover_section(project)
+        story.extend(
 
-        if cover:
-            story.extend(cover)
+            build_cover_section(
+                project
+            )
+
+        )
+
+
+        story.append(
+            PageBreak()
+        )
 
 
         # ==================================================
-        # TEMPORARY TEST MODE
-        # ==================================================
-        #
-        # ALL CONTENT SECTIONS ARE DISABLED.
-        #
-        # This is intentional.
-        #
-        # The current backend is producing:
-        #
-        # Table
-        #   -> 1 row
-        #   -> 1 column
-        #   -> 2502pt tall cell
-        #
-        # containing AI-generated text beginning with:
-        #
-        # "Build a production-ready SIH Team Matcher..."
-        #
-        # ReportLab cannot split that table cell across pages.
-        #
-        # Once this generates successfully, we will identify
-        # the exact section responsible and fix it properly.
-        #
+        # CONTENT SECTIONS
         # ==================================================
 
+        sections = [
 
-        # No executive summary
-        # No planner
-        # No research
-        # No architecture
-        # No judge
-        # No pitch
-        # No appendix
+            # ----------------------------------------------
+            # Executive Summary
+            # ----------------------------------------------
+
+            build_executive_summary(
+                project
+            ),
+
+
+            # ----------------------------------------------
+            # Planner / Roadmap
+            # ----------------------------------------------
+
+            planner_section.build(
+
+                project.roadmap
+                if project.roadmap
+                else {}
+
+            ),
+
+
+            # ----------------------------------------------
+            # Research
+            # ----------------------------------------------
+
+            research_section.build(
+
+                project.research
+                if project.research
+                else {}
+
+            ),
+
+
+            # ----------------------------------------------
+            # Architecture
+            # ----------------------------------------------
+
+            architecture_section.build(
+
+                project.architecture
+                if project.architecture
+                else {}
+
+            ),
+
+
+            # ----------------------------------------------
+            # Judge / Evaluation
+            # ----------------------------------------------
+
+            judge_section.build(
+
+                project.judge
+                if project.judge
+                else {}
+
+            ),
+
+
+            # ----------------------------------------------
+            # Pitch Deck
+            # ----------------------------------------------
+
+            pitch_deck_section.build(
+
+                project.pitch_deck
+                if project.pitch_deck
+                else {}
+
+            ),
+
+
+            # ----------------------------------------------
+            # Appendix
+            # ----------------------------------------------
+
+            appendix_section.build(
+                project
+            ),
+
+        ]
+
+
+        # ==================================================
+        # ADD SECTIONS
+        # ==================================================
+
+        for section in sections:
+
+            if section:
+
+                story.extend(
+                    section
+                )
 
 
         # ==================================================
@@ -158,7 +305,7 @@ class PDFGenerator:
 
 
 # ======================================================
-# GENERATOR INSTANCE
+# SINGLE GENERATOR INSTANCE
 # ======================================================
 
 pdf_generator = PDFGenerator()
