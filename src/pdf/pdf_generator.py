@@ -13,30 +13,6 @@ from src.pdf.sections.cover import (
     build_cover_section,
 )
 
-from src.pdf.sections.executive_summary import (
-    build_executive_summary,
-)
-
-from src.pdf.sections.planner import (
-    planner_section,
-)
-
-from src.pdf.sections.research import (
-    research_section,
-)
-
-from src.pdf.sections.judge import (
-    judge_section,
-)
-
-from src.pdf.sections.pitch import (
-    pitch_deck_section,
-)
-
-from src.pdf.sections.appendix import (
-    appendix_section,
-)
-
 
 # ======================================================
 # PAGE FOOTER
@@ -79,17 +55,11 @@ class PDFGenerator:
         )
 
 
-    def generate(
-        self,
-        project
-    ):
+    def generate(self, project):
 
         filename = (
-            project.project_title
-            .replace(
-                " ",
-                "_"
-            )
+            str(project.project_title)
+            .replace(" ", "_")
             + "_Startup_Intelligence_Report.pdf"
         )
 
@@ -110,7 +80,7 @@ class PDFGenerator:
             topMargin=PAGE_MARGIN,
             bottomMargin=PAGE_MARGIN,
 
-            title=project.project_title,
+            title=str(project.project_title),
 
             author="HackMind AI Copilot",
 
@@ -124,136 +94,53 @@ class PDFGenerator:
 
 
         # ==================================================
-        # PREMIUM COVER
+        # COVER
         # ==================================================
 
-        story.extend(
-            build_cover_section(
-                project
-            )
-        )
+        cover = build_cover_section(project)
 
-        story.append(
-            PageBreak()
-        )
+        if cover:
+            story.extend(cover)
 
 
         # ==================================================
-        # CONTENT SECTIONS
+        # TEMPORARY TEST MODE
+        # ==================================================
         #
-        # TEMPORARY:
-        # Architecture section is disabled because the
-        # current architecture data is causing a ReportLab
-        # LayoutError from an oversized table cell.
+        # ALL CONTENT SECTIONS ARE DISABLED.
         #
-        # We will restore it after fixing the underlying
-        # table/Paragraph handling.
+        # This is intentional.
+        #
+        # The current backend is producing:
+        #
+        # Table
+        #   -> 1 row
+        #   -> 1 column
+        #   -> 2502pt tall cell
+        #
+        # containing AI-generated text beginning with:
+        #
+        # "Build a production-ready SIH Team Matcher..."
+        #
+        # ReportLab cannot split that table cell across pages.
+        #
+        # Once this generates successfully, we will identify
+        # the exact section responsible and fix it properly.
+        #
         # ==================================================
 
-        sections = [
 
-            # ----------------------------------------------
-            # Executive Summary
-            # ----------------------------------------------
-
-            build_executive_summary(
-                project
-            ),
-
-
-            # ----------------------------------------------
-            # Planner / Roadmap
-            # ----------------------------------------------
-
-            planner_section.build(
-
-                project.roadmap
-                if project.roadmap
-                else {}
-
-            ),
-
-
-            # ----------------------------------------------
-            # Research
-            # ----------------------------------------------
-
-            research_section.build(
-
-                project.research
-                if project.research
-                else {}
-
-            ),
-
-
-            # ==================================================
-            # ARCHITECTURE TEMPORARILY DISABLED
-            # ==================================================
-            #
-            # architecture_section.build(
-            #
-            #     project.architecture
-            #     if project.architecture
-            #     else {}
-            #
-            # ),
-            #
-            # ==================================================
-
-
-            # ----------------------------------------------
-            # Judge / Evaluation
-            # ----------------------------------------------
-
-            judge_section.build(
-
-                project.judge
-                if project.judge
-                else {}
-
-            ),
-
-
-            # ----------------------------------------------
-            # Pitch Deck
-            # ----------------------------------------------
-
-            pitch_deck_section.build(
-
-                project.pitch_deck
-                if project.pitch_deck
-                else {}
-
-            ),
-
-
-            # ----------------------------------------------
-            # Appendix
-            # ----------------------------------------------
-
-            appendix_section.build(
-                project
-            )
-
-        ]
+        # No executive summary
+        # No planner
+        # No research
+        # No architecture
+        # No judge
+        # No pitch
+        # No appendix
 
 
         # ==================================================
-        # ADD SECTIONS WITHOUT EMPTY PAGES
-        # ==================================================
-
-        for section in sections:
-
-            if section:
-
-                story.extend(
-                    section
-                )
-
-
-        # ==================================================
-        # BUILD PDF
+        # BUILD
         # ==================================================
 
         doc.build(
@@ -271,7 +158,7 @@ class PDFGenerator:
 
 
 # ======================================================
-# SINGLE PDF GENERATOR INSTANCE
+# GENERATOR INSTANCE
 # ======================================================
 
 pdf_generator = PDFGenerator()
