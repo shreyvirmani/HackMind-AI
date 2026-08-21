@@ -1,0 +1,846 @@
+From bdfc49086f86c62ff1af3059b498843bd7f56182 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Fri, 21 Aug 2026 09:09:51 +0000
+Subject: [PATCH] Fix: PDF markup-injection crashes across the entire PDF
+ module (systemic, not isolated)
+
+Root cause (same class as the earlier diagram-crash fix, but far more
+widespread): AI-generated text was being embedded raw into ReportLab's
+Paragraph markup (a small XML-like tag language) throughout every PDF
+section file, with no escaping anywhere. Any '&', '<', or '>' in
+AI-generated content -- plausible in almost any field ("AI & ML
+Platform", "cost < $50/mo", "<Container> component") -- corrupts
+or crashes the markup parser. This is what produced:
+
+    paragraph text '<para><font size="18"></para>' caused exception
+    Parse error: saw </para> instead of expected </font>
+
+on project 15's title. Rather than patch that one field, audited and
+fixed every place across all 8 PDF section files that embeds raw
+AI-generated text into markup:
+
+- src/pdf/components.py: added safe_text() (escapes a value for safe
+  Paragraph embedding) and collapse_ws() (normalizes incidental
+  whitespace/newlines in multi-line f-string templates so they don't
+  get misread as content row-breaks). Applied safe_text() to every
+  shared low-level helper (title, section_title, subsection, body,
+  muted, bullet, code, create_metric_card, create_tag) so escaping
+  happens centrally. create_card()'s heading argument is now escaped
+  unconditionally -- no call site ever legitimately needs markup in a
+  heading, so this is safe with zero double-escaping risk.
+- executive_summary.py, architecture.py, planner.py, judge.py,
+  metadata.py, appendix.py, pitch.py, cover.py: wrapped every raw
+  AI-generated value passed into create_card()/Paragraph() with
+  safe_text() -- titles, taglines, problem/solution statements,
+  feedback, bullet-list items, competitor names, team roles, the
+  project idea, everything.
+- Self-caught regression: an intermediate version of this fix made
+  create_card() also split on plain newlines as a blanket safety net,
+  which broke call sites using multi-line f-string templates purely
+  for source-code readability (tore a single logical tag apart across
+  rows -- the exact same 'unclosed tag' error this fix exists to
+  prevent, just self-inflicted). Reverted create_card() to only split
+  on the deliberate '<br/>' convention, and used the new collapse_ws()
+  helper at the two call sites (executive_summary's hero card,
+  metadata's Project Identity card) that needed their incidental
+  newlines normalized instead.
+
+Verified: a comprehensive adversarial test loading '&', '<', '>' into
+EVERY field simultaneously (title, tagline, problem, solution,
+features, diagram, competitors, feedback, team roles, everything)
+generates successfully; visually confirmed via rendered PNG that the
+characters display as literal text, not corrupted; reran the existing
+clean-data PDF test and the full 5-stage workflow integration test to
+confirm no regression on the normal path.
+---
+ src/pdf/components.py                 | 114 +++++++++++++++++++++-----
+ src/pdf/sections/appendix.py          |  17 ++--
+ src/pdf/sections/architecture.py      |   8 +-
+ src/pdf/sections/cover.py             |   3 +-
+ src/pdf/sections/executive_summary.py |  28 ++++---
+ src/pdf/sections/judge.py             |   9 +-
+ src/pdf/sections/metadata.py          |  18 ++--
+ src/pdf/sections/pitch.py             |   5 +-
+ src/pdf/sections/planner.py           |  17 ++--
+ src/pdf/sections/research.py          |  25 +++---
+ 10 files changed, 164 insertions(+), 80 deletions(-)
+
+diff --git a/src/pdf/components.py b/src/pdf/components.py
+index 4d189db..32449d9 100644
+--- a/src/pdf/components.py
++++ b/src/pdf/components.py
+@@ -1,4 +1,5 @@
+ import re
++from xml.sax.saxutils import escape as _xml_escape
+ 
+ from reportlab.platypus import (
+     Paragraph,
+@@ -21,6 +22,61 @@ from src.pdf.styles import (
+ )
+ 
+ 
++# ===========================================================
++# TEXT SAFETY
++# ===========================================================
++
++def safe_text(value) -> str:
++    """
++    Escapes a value for safe embedding into ReportLab Paragraph
++    markup (which uses a small XML-like tag language). AI-generated
++    text -- project titles, taglines, feedback, diagram source, etc.
++    -- routinely contains '&', '<', '>' (e.g. "AI & ML Platform",
++    "<Container> component"), which ReportLab's parser reads as the
++    start of a tag/entity rather than literal text. Left unescaped,
++    this either corrupts the rendered output or crashes PDF
++    generation outright with a markup parse error.
++
++    Every place in src/pdf/ that embeds a raw AI-generated string
++    into an f-string destined for a Paragraph should wrap it with
++    this first. Only use this for the raw *values* being inserted --
++    never wrap markup you're intentionally constructing yourself
++    (like the surrounding <b>...</b> or <font>...</font> tags),
++    since escaping those would turn them into literal text instead
++    of formatting.
++    """
++    if value is None:
++        return ""
++    return _xml_escape(str(value))
++
++
++def collapse_ws(html: str) -> str:
++    """
++    Collapses incidental whitespace (including newlines) down to
++    single spaces, WITHOUT touching intentional "<br/>" tags.
++
++    Use this on any multi-line Python f-string template destined for
++    create_card()/Paragraph() -- e.g. a template like:
++
++        f'''
++        <font size="18">
++        <b>{safe_text(title)}</b>
++        </font>
++        '''
++
++    Those newlines only exist for source-code readability; they were
++    never meant to be content row-breaks. create_card() splits its
++    content on "<br/>" to let long content paginate across pages
++    (see its docstring), and a raw newline landing in the middle of
++    a single logical tag would get split apart mid-tag, causing the
++    exact "unclosed tag" parse error this whole escaping effort
++    exists to prevent. Collapse those incidental newlines away with
++    this helper before the template's actual "<br/>" separators (if
++    any) get to do their job.
++    """
++    return re.sub(r"\s+", " ", html).strip()
++
++
+ # ===========================================================
+ # SPACING
+ # ===========================================================
+@@ -35,49 +91,49 @@ def space(height=12):
+ 
+ def title(text):
+     return Paragraph(
+-        str(text),
++        safe_text(text),
+         REPORT_STYLES["cover_title"]
+     )
+ 
+ 
+ def section_title(text):
+     return Paragraph(
+-        str(text),
++        safe_text(text),
+         REPORT_STYLES["section_title"]
+     )
+ 
+ 
+ def subsection(text):
+     return Paragraph(
+-        str(text),
++        safe_text(text),
+         REPORT_STYLES["subsection_title"]
+     )
+ 
+ 
+ def body(text):
+     return Paragraph(
+-        str(text),
++        safe_text(text),
+         REPORT_STYLES["body"]
+     )
+ 
+ 
+ def muted(text):
+     return Paragraph(
+-        str(text),
++        safe_text(text),
+         REPORT_STYLES["muted"]
+     )
+ 
+ 
+ def bullet(text):
+     return Paragraph(
+-        f"• {text}",
++        f"• {safe_text(text)}",
+         REPORT_STYLES["bullet"]
+     )
+ 
+ 
+ def code(text):
+     return Paragraph(
+-        f"<font face='Courier'>{text}</font>",
++        f"<font face='Courier'>{safe_text(text)}</font>",
+         REPORT_STYLES["code"]
+     )
+ 
+@@ -138,9 +194,9 @@ def create_card(
+     Renders a titled card with a background box and border.
+ 
+     IMPORTANT: `content` is split into one Table row per line,
+-    splitting on EITHER "<br/>" (the convention used throughout this
+-    codebase for joining bullet lists) OR a plain newline. This is
+-    not just cosmetic -- ReportLab Tables can only split BETWEEN
++    splitting on "<br/>" (the convention used throughout this
++    codebase for joining bullet lists and multi-line content). This
++    is not just cosmetic -- ReportLab Tables can only split BETWEEN
+     rows, never WITHIN a single cell's Paragraph. Putting the entire
+     body in one giant Paragraph/row meant any unusually long
+     AI-generated content (many roadmap tasks, a multi-line diagram
+@@ -148,24 +204,40 @@ def create_card(
+     which is unrecoverable and crashes PDF generation outright
+     (LayoutError: "... too large on page ..."). Splitting into many
+     small rows lets the table flow across page boundaries naturally,
+-    no matter how long the content gets -- and splitting on plain
+-    newlines too (not just <br/>) means this protection applies even
+-    to call sites that pass raw multi-line text directly, without
+-    remembering to join it with <br/> themselves first.
++    no matter how long the content gets.
++
++    Deliberately does NOT also split on plain "\\n": an earlier
++    version of this function did, as a blanket safety net, but that
++    broke call sites that build their content as a Python multi-line
++    f-string purely for source-code readability (e.g. a template
++    like f"<font>...\\n<b>{x}</b>...\\n</font>") -- those incidental
++    newlines aren't meant to be row breaks, and splitting on them
++    tore a single logical tag apart across separate rows, which is
++    the exact "unclosed tag" parse error this whole mechanism exists
++    to prevent. Any call site with genuinely multi-line/multi-item
++    content (a bullet list, a diagram, several lines) must join it
++    with "<br/>" explicitly -- see architecture.py's diagram handling
++    or any of the "<br/>".join(...) patterns in the section files.
+     """
+ 
+     content_str = "" if content is None else str(content)
+ 
+-    # Split on <br/> (tolerating <br>, <br />, <BR/> etc.) OR a
+-    # plain newline -- either one starts a new row.
+-    lines = re.split(r"<br\s*/?>|\n", content_str, flags=re.IGNORECASE)
++    # Escaped automatically and unconditionally, unlike `content`
++    # below: a heading is always meant to be plain display text (a
++    # section label, a phase name, a role name) -- no call site
++    # anywhere in this codebase intentionally puts markup in a
++    # heading, so there's no double-escaping risk here.
++    safe_heading = safe_text(heading)
++
++    # Split on <br/>, tolerating <br>, <br />, <BR/> etc.
++    lines = re.split(r"<br\s*/?>", content_str, flags=re.IGNORECASE)
+     lines = [line.strip() for line in lines if line.strip()]
+ 
+     if not lines:
+         lines = [""]
+ 
+     rows = [
+-        [Paragraph(str(heading), REPORT_STYLES["card_title"])]
++        [Paragraph(safe_heading, REPORT_STYLES["card_title"])]
+     ]
+ 
+     for line in lines:
+@@ -215,7 +287,7 @@ def create_metric_card(
+             [
+ 
+                 Paragraph(
+-                    str(title_text),
++                    safe_text(title_text),
+                     REPORT_STYLES["card_title"]
+                 )
+ 
+@@ -224,7 +296,7 @@ def create_metric_card(
+             [
+ 
+                 Paragraph(
+-                    str(value),
++                    safe_text(value),
+                     REPORT_STYLES["metric_value"]
+                 )
+ 
+@@ -346,7 +418,7 @@ def create_tag(text):
+         [
+             [
+                 Paragraph(
+-                    f"<b>{text}</b>",
++                    f"<b>{safe_text(text)}</b>",
+                     REPORT_STYLES["muted"]
+                 )
+             ]
+diff --git a/src/pdf/sections/appendix.py b/src/pdf/sections/appendix.py
+index 650c2ff..1a1cb86 100644
+--- a/src/pdf/sections/appendix.py
++++ b/src/pdf/sections/appendix.py
+@@ -1,4 +1,5 @@
+ from src.pdf.components import (
++    safe_text,
+     create_section_title,
+     create_card,
+     create_tag_grid,
+@@ -76,7 +77,7 @@ class AppendixSection:
+                 future_text = "<br/>".join(
+ 
+                     [
+-                        f"→ {item}"
++                        f"→ {safe_text(item)}"
+                         for item in future_scope
+                     ]
+ 
+@@ -84,7 +85,7 @@ class AppendixSection:
+ 
+             else:
+ 
+-                future_text = str(future_scope)
++                future_text = safe_text(future_scope)
+ 
+ 
+ 
+@@ -156,7 +157,7 @@ class AppendixSection:
+                 task_text = "<br/>".join(
+ 
+                     [
+-                        f"✓ {task}"
++                        f"✓ {safe_text(task)}"
+                         for task in tasks
+                     ]
+ 
+@@ -224,9 +225,11 @@ class AppendixSection:
+                             "Team Role"
+                         ),
+ 
+-                        role.get(
+-                            "responsibilities",
+-                            ""
++                        safe_text(
++                            role.get(
++                                "responsibilities",
++                                ""
++                            )
+                         )
+ 
+                     )
+@@ -326,7 +329,7 @@ class AppendixSection:
+ 
+                     "System Architecture Documentation",
+ 
+-                    architecture
++                    safe_text(architecture)
+ 
+                 )
+ 
+diff --git a/src/pdf/sections/architecture.py b/src/pdf/sections/architecture.py
+index 6d0bdf8..de87c0c 100644
+--- a/src/pdf/sections/architecture.py
++++ b/src/pdf/sections/architecture.py
+@@ -1,4 +1,4 @@
+-from src.pdf.components import create_section_title, create_card, create_table, subsection, space
++from src.pdf.components import create_section_title, create_card, create_table, subsection, space, safe_text
+ 
+ 
+ class ArchitectureSection:
+@@ -10,9 +10,9 @@ class ArchitectureSection:
+         overview = architecture.get("architecture_overview")
+         pattern = architecture.get("architectural_pattern")
+         if overview:
+-            story += [create_card("Architecture Overview", overview), space(16)]
++            story += [create_card("Architecture Overview", safe_text(overview)), space(16)]
+         if pattern:
+-            story += [create_card("Architectural Pattern", pattern), space(16)]
++            story += [create_card("Architectural Pattern", safe_text(pattern)), space(16)]
+ 
+         components = architecture.get("components", [])
+         if components:
+@@ -48,7 +48,7 @@ class ArchitectureSection:
+         ]:
+             values = architecture.get(key, [])
+             if values:
+-                text = "<br/>".join(f"&bull; {v}" for v in values)
++                text = "<br/>".join(f"&bull; {safe_text(v)}" for v in values)
+                 story += [create_card(title, text), space(16)]
+ 
+         diagram = architecture.get("mermaid_diagram")
+diff --git a/src/pdf/sections/cover.py b/src/pdf/sections/cover.py
+index 14aaa72..a368b68 100644
+--- a/src/pdf/sections/cover.py
++++ b/src/pdf/sections/cover.py
+@@ -10,6 +10,7 @@ from reportlab.lib.units import inch
+ from reportlab.lib.enums import TA_CENTER
+ 
+ from src.pdf.styles import REPORT_STYLES
++from src.pdf.components import safe_text
+ 
+ 
+ 
+@@ -210,7 +211,7 @@ def build_cover_section(project):
+ 
+                     f"""
+                     <font color="#FFFFFF">
+-                    <b>{project_title}</b>
++                    <b>{safe_text(project_title)}</b>
+                     </font>
+                     """,
+ 
+diff --git a/src/pdf/sections/executive_summary.py b/src/pdf/sections/executive_summary.py
+index 76b7f65..5c589ea 100644
+--- a/src/pdf/sections/executive_summary.py
++++ b/src/pdf/sections/executive_summary.py
+@@ -14,6 +14,8 @@ from src.pdf.components import (
+     create_metric_card,
+     create_metric_dashboard,
+     create_progress,
++    safe_text,
++    collapse_ws,
+ )
+ 
+ from src.pdf.styles import REPORT_STYLES
+@@ -118,23 +120,23 @@ def build_executive_summary(project):
+     if title:
+ 
+         hero_parts.append(
+-            f"""
++            collapse_ws(f"""
+             <font size="18">
+-            <b>{title}</b>
++            <b>{safe_text(title)}</b>
+             </font>
+-            """
++            """)
+         )
+ 
+ 
+     if tagline:
+ 
+         hero_parts.append(
+-            f"""
++            collapse_ws(f"""
+             <br/><br/>
+             <font color="#2563EB">
+-            {tagline}
++            {safe_text(tagline)}
+             </font>
+-            """
++            """)
+         )
+ 
+ 
+@@ -210,7 +212,7 @@ def build_executive_summary(project):
+         elements.append(
+             create_card(
+                 "Problem Statement",
+-                problem
++                safe_text(problem)
+             )
+         )
+ 
+@@ -230,7 +232,7 @@ def build_executive_summary(project):
+         elements.append(
+             create_card(
+                 "Proposed Solution",
+-                solution
++                safe_text(solution)
+             )
+         )
+ 
+@@ -251,7 +253,7 @@ def build_executive_summary(project):
+ 
+             users = "<br/>".join(
+                 [
+-                    f"• {x}"
++                    f"• {safe_text(x)}"
+                     for x in target_users
+                 ]
+             )
+@@ -284,7 +286,7 @@ def build_executive_summary(project):
+ 
+         strength_text = "<br/>".join(
+             [
+-                f"• {x}"
++                f"• {safe_text(x)}"
+                 for x in strengths
+             ]
+         )
+@@ -292,7 +294,7 @@ def build_executive_summary(project):
+ 
+         weakness_text = "<br/>".join(
+             [
+-                f"• {x}"
++                f"• {safe_text(x)}"
+                 for x in weaknesses
+             ]
+         )
+@@ -441,7 +443,7 @@ def build_executive_summary(project):
+ 
+         improvement_text = "<br/>".join(
+             [
+-                f"→ {x}"
++                f"→ {safe_text(x)}"
+                 for x in improvements
+             ]
+         )
+@@ -470,7 +472,7 @@ def build_executive_summary(project):
+         elements.append(
+             create_card(
+                 "HackMind AI Final Verdict",
+-                feedback
++                safe_text(feedback)
+             )
+         )
+ 
+diff --git a/src/pdf/sections/judge.py b/src/pdf/sections/judge.py
+index 135064e..4f5b8e6 100644
+--- a/src/pdf/sections/judge.py
++++ b/src/pdf/sections/judge.py
+@@ -1,4 +1,5 @@
+ from src.pdf.components import (
++    safe_text,
+     create_section_title,
+     create_metric_card,
+     create_metric_dashboard,
+@@ -124,7 +125,7 @@ class JudgeSection:
+ 
+                 "HackMind AI Final Verdict",
+ 
+-                feedback
++                safe_text(feedback)
+ 
+             )
+ 
+@@ -144,7 +145,7 @@ class JudgeSection:
+             strength_text = "<br/>".join(
+ 
+                 [
+-                    f"✓ {item}"
++                    f"✓ {safe_text(item)}"
+                     for item in strengths
+                 ]
+ 
+@@ -172,7 +173,7 @@ class JudgeSection:
+             weakness_text = "<br/>".join(
+ 
+                 [
+-                    f"⚠ {item}"
++                    f"⚠ {safe_text(item)}"
+                     for item in weaknesses
+                 ]
+ 
+@@ -206,7 +207,7 @@ class JudgeSection:
+             improvement_text = "<br/>".join(
+ 
+                 [
+-                    f"→ {item}"
++                    f"→ {safe_text(item)}"
+                     for item in improvements
+                 ]
+ 
+diff --git a/src/pdf/sections/metadata.py b/src/pdf/sections/metadata.py
+index 3e0c139..b34a309 100644
+--- a/src/pdf/sections/metadata.py
++++ b/src/pdf/sections/metadata.py
+@@ -1,4 +1,6 @@
+ from src.pdf.components import (
++    safe_text,
++    collapse_ws,
+     create_section_title,
+     create_card,
+     create_metric_card,
+@@ -119,8 +121,8 @@ class MetadataPage:
+ 
+                 "Project Identity",
+ 
+-                f"""
+-                <b>Name:</b> {project.project_title}
++                collapse_ws(f"""
++                <b>Name:</b> {safe_text(project.project_title)}
+ 
+                 <br/><br/>
+ 
+@@ -137,9 +139,9 @@ class MetadataPage:
+ 
+                 <br/>
+ 
+-                {project.idea}
++                {safe_text(project.idea)}
+ 
+-                """
++                """)
+ 
+             )
+ 
+@@ -167,7 +169,7 @@ class MetadataPage:
+             feature_text = "<br/>".join(
+ 
+                 [
+-                    f"✓ {item}"
++                    f"✓ {safe_text(item)}"
+                     for item in features
+                 ]
+ 
+@@ -262,7 +264,7 @@ class MetadataPage:
+ 
+                     "System Architecture",
+ 
+-                    architecture
++                    safe_text(architecture)
+ 
+                 )
+ 
+@@ -315,7 +317,7 @@ class MetadataPage:
+                 content = "<br/>".join(
+ 
+                     [
+-                        f"• {task}"
++                        f"• {safe_text(task)}"
+                         for task in tasks
+                     ]
+ 
+@@ -384,7 +386,7 @@ class MetadataPage:
+ 
+                         role_name,
+ 
+-                        responsibilities
++                        safe_text(responsibilities)
+ 
+                     )
+ 
+diff --git a/src/pdf/sections/pitch.py b/src/pdf/sections/pitch.py
+index 2d918a9..a83a545 100644
+--- a/src/pdf/sections/pitch.py
++++ b/src/pdf/sections/pitch.py
+@@ -1,4 +1,5 @@
+ from src.pdf.components import (
++    safe_text,
+     create_section_title,
+     create_card,
+     space,
+@@ -78,14 +79,14 @@ class PitchDeckSection:
+ 
+                 content_text = "<br/>".join(
+                     [
+-                        f"• {item}"
++                        f"• {safe_text(item)}"
+                         for item in content
+                     ]
+                 )
+ 
+             else:
+ 
+-                content_text = str(content)
++                content_text = safe_text(content)
+ 
+ 
+ 
+diff --git a/src/pdf/sections/planner.py b/src/pdf/sections/planner.py
+index 9dd2545..64712f8 100644
+--- a/src/pdf/sections/planner.py
++++ b/src/pdf/sections/planner.py
+@@ -1,4 +1,5 @@
+ from src.pdf.components import (
++    safe_text,
+     create_section_title,
+     create_card,
+     create_metric_card,
+@@ -132,7 +133,7 @@ class PlannerSection:
+ 
+                 create_card(
+                     "Problem Statement",
+-                    problem
++                    safe_text(problem)
+                 )
+ 
+             )
+@@ -159,7 +160,7 @@ class PlannerSection:
+ 
+                 create_card(
+                     "Proposed Solution",
+-                    solution
++                    safe_text(solution)
+                 )
+ 
+             )
+@@ -182,7 +183,7 @@ class PlannerSection:
+                 user_text = "<br/>".join(
+ 
+                     [
+-                        f"✓ {user}"
++                        f"✓ {safe_text(user)}"
+                         for user in users
+                     ]
+ 
+@@ -220,7 +221,7 @@ class PlannerSection:
+             feature_text = "<br/>".join(
+ 
+                 [
+-                    f"✓ {feature}"
++                    f"✓ {safe_text(feature)}"
+                     for feature in features
+                 ]
+ 
+@@ -309,7 +310,7 @@ class PlannerSection:
+ 
+                 create_card(
+                     "System Architecture",
+-                    architecture
++                    safe_text(architecture)
+                 )
+ 
+             )
+@@ -357,7 +358,7 @@ class PlannerSection:
+                 task_text = "<br/>".join(
+ 
+                     [
+-                        f"→ {task}"
++                        f"→ {safe_text(task)}"
+                         for task in tasks
+                     ]
+ 
+@@ -429,7 +430,7 @@ class PlannerSection:
+ 
+                         create_card(
+                             name or "Team Member",
+-                            responsibility
++                            safe_text(responsibility)
+                         )
+ 
+                     )
+@@ -458,7 +459,7 @@ class PlannerSection:
+ 
+                 create_card(
+                     "Future Expansion Opportunities",
+-                    future
++                    safe_text(future)
+                 )
+ 
+             )
+diff --git a/src/pdf/sections/research.py b/src/pdf/sections/research.py
+index 875a55d..6e40510 100644
+--- a/src/pdf/sections/research.py
++++ b/src/pdf/sections/research.py
+@@ -1,4 +1,5 @@
+ from src.pdf.components import (
++    safe_text,
+     create_section_title,
+     create_card,
+     create_table,
+@@ -37,7 +38,7 @@ class ResearchSection:
+             story.append(
+                 create_card(
+                     "Market Overview",
+-                    market
++                    safe_text(market)
+                 )
+             )
+ 
+@@ -64,14 +65,14 @@ class ResearchSection:
+ 
+                 audience_text = "<br/>".join(
+                     [
+-                        f"✓ {item}"
++                        f"✓ {safe_text(item)}"
+                         for item in audience
+                     ]
+                 )
+ 
+             else:
+ 
+-                audience_text = str(audience)
++                audience_text = safe_text(audience)
+ 
+ 
+ 
+@@ -180,14 +181,14 @@ class ResearchSection:
+ 
+                 text = "<br/>".join(
+                     [
+-                        f"→ {x}"
++                        f"→ {safe_text(x)}"
+                         for x in existing
+                     ]
+                 )
+ 
+             else:
+ 
+-                text = str(existing)
++                text = safe_text(existing)
+ 
+ 
+             story.append(
+@@ -220,7 +221,7 @@ class ResearchSection:
+             story.append(
+                 create_card(
+                     "Identified Market Gap",
+-                    gap
++                    safe_text(gap)
+                 )
+             )
+ 
+@@ -274,14 +275,14 @@ class ResearchSection:
+ 
+                     content = "<br/>".join(
+                         [
+-                            f"• {x}"
++                            f"• {safe_text(x)}"
+                             for x in value
+                         ]
+                     )
+ 
+                 else:
+ 
+-                    content = str(value)
++                    content = safe_text(value)
+ 
+ 
+ 
+@@ -315,7 +316,7 @@ class ResearchSection:
+             story.append(
+                 create_card(
+                     "Business Model",
+-                    business
++                    safe_text(business)
+                 )
+             )
+ 
+@@ -342,7 +343,7 @@ class ResearchSection:
+             story.append(
+                 create_card(
+                     "Revenue Strategy",
+-                    revenue
++                    safe_text(revenue)
+                 )
+             )
+ 
+@@ -370,14 +371,14 @@ class ResearchSection:
+ 
+                 risk_text = "<br/>".join(
+                     [
+-                        f"⚠ {x}"
++                        f"⚠ {safe_text(x)}"
+                         for x in risks
+                     ]
+                 )
+ 
+             else:
+ 
+-                risk_text = str(risks)
++                risk_text = safe_text(risks)
+ 
+ 
+ 
+-- 
+2.43.0
+

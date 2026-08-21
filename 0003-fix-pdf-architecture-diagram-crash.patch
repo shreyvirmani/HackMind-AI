@@ -1,0 +1,120 @@
+From 7a7b9da874fe866255673d50dfa49c5c2fb21ac1 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Fri, 21 Aug 2026 01:11:00 +0000
+Subject: [PATCH] Fix: PDF crash on long architecture diagrams (same class of
+ bug as the earlier phase-card crash, different call site)
+
+Root cause: the architecture section passes the raw mermaid/C4
+diagram text straight into create_card() wrapped in one <font> tag,
+with its internal newlines left as plain '\n' instead of the '<br/>'
+convention create_card splits on. ReportLab Tables can only split
+BETWEEN rows, never within a single cell's Paragraph -- so a long
+diagram became one unsplittable, page-exceeding cell and crashed
+PDF generation (the same LayoutError class fixed earlier for long
+roadmap phases, just a different content type hitting the same
+gap: real newlines instead of <br/>-joined bullets).
+
+Two fixes:
+- src/pdf/components.py: create_card() now also splits on plain
+  newlines, not just <br/> tags. This is a safety net for every
+  create_card call site in the codebase (30+), not just this one --
+  any future content passed with raw '\n' line breaks instead of
+  '<br/>' is now protected against the same crash.
+- src/pdf/sections/architecture.py: the diagram is now also properly
+  XML-escaped per line (C4/mermaid syntax is full of '<', '>', '&'
+  -- <<Container>>, -->, etc. -- which would otherwise corrupt or
+  break ReportLab's Paragraph markup parser even after the crash
+  itself was fixed), with each line wrapped in its own <font> tag
+  so the markup stays valid once create_card splits it into
+  separate table rows.
+
+Verified: reproduced the exact production crash (same LayoutError
+signature) with a realistic long C4Context diagram using the OLD
+code, confirmed the NEW code builds successfully with identical
+input, and visually rendered the output to confirm each diagram
+line displays correctly as literal monospaced text (not corrupted
+or misinterpreted as markup).
+---
+ src/pdf/components.py            | 31 ++++++++++++++++++-------------
+ src/pdf/sections/architecture.py | 19 ++++++++++++++++++-
+ 2 files changed, 36 insertions(+), 14 deletions(-)
+
+diff --git a/src/pdf/components.py b/src/pdf/components.py
+index 3f7fc3a..4d189db 100644
+--- a/src/pdf/components.py
++++ b/src/pdf/components.py
+@@ -137,23 +137,28 @@ def create_card(
+     """
+     Renders a titled card with a background box and border.
+ 
+-    IMPORTANT: `content` is split into one Table row per line
+-    (splitting on "<br/>", the convention used throughout this
+-    codebase for joining bullet lists). This is not just cosmetic --
+-    ReportLab Tables can only split BETWEEN rows, never WITHIN a
+-    single cell's Paragraph. Putting the entire body in one giant
+-    Paragraph/row meant any unusually long AI-generated list (many
+-    roadmap tasks, many features, etc.) could produce a cell taller
+-    than a full page, which is unrecoverable and crashes PDF
+-    generation outright (LayoutError: "... too large on page ...").
+-    Splitting into many small rows lets the table flow across page
+-    boundaries naturally, no matter how long the content gets.
++    IMPORTANT: `content` is split into one Table row per line,
++    splitting on EITHER "<br/>" (the convention used throughout this
++    codebase for joining bullet lists) OR a plain newline. This is
++    not just cosmetic -- ReportLab Tables can only split BETWEEN
++    rows, never WITHIN a single cell's Paragraph. Putting the entire
++    body in one giant Paragraph/row meant any unusually long
++    AI-generated content (many roadmap tasks, a multi-line diagram
++    definition, etc.) could produce a cell taller than a full page,
++    which is unrecoverable and crashes PDF generation outright
++    (LayoutError: "... too large on page ..."). Splitting into many
++    small rows lets the table flow across page boundaries naturally,
++    no matter how long the content gets -- and splitting on plain
++    newlines too (not just <br/>) means this protection applies even
++    to call sites that pass raw multi-line text directly, without
++    remembering to join it with <br/> themselves first.
+     """
+ 
+     content_str = "" if content is None else str(content)
+ 
+-    # Split on <br/>, tolerating <br>, <br />, <BR/> etc.
+-    lines = re.split(r"<br\s*/?>", content_str, flags=re.IGNORECASE)
++    # Split on <br/> (tolerating <br>, <br />, <BR/> etc.) OR a
++    # plain newline -- either one starts a new row.
++    lines = re.split(r"<br\s*/?>|\n", content_str, flags=re.IGNORECASE)
+     lines = [line.strip() for line in lines if line.strip()]
+ 
+     if not lines:
+diff --git a/src/pdf/sections/architecture.py b/src/pdf/sections/architecture.py
+index faecf80..6d0bdf8 100644
+--- a/src/pdf/sections/architecture.py
++++ b/src/pdf/sections/architecture.py
+@@ -53,7 +53,24 @@ class ArchitectureSection:
+ 
+         diagram = architecture.get("mermaid_diagram")
+         if diagram:
+-            story += [create_card("Architecture Diagram (Mermaid)", f"<font name='Courier'>{diagram}</font>"), space(16)]
++            from xml.sax.saxutils import escape as xml_escape
++
++            # C4/mermaid diagram syntax is full of characters that
++            # are meaningful to ReportLab's Paragraph markup (<<Container>>,
++            # -->, etc.) -- escape each line so they render as literal
++            # text instead of corrupting/being misread as markup tags.
++            # Each line gets its own <font> wrapper (rather than one
++            # wrapper around the whole block) because create_card
++            # splits this content into separate table rows -- a single
++            # wrapper spanning the whole diagram would end up broken
++            # across rows with a dangling, unclosed tag.
++            diagram_lines = diagram.split("\n")
++            diagram_html = "<br/>".join(
++                f"<font name='Courier'>{xml_escape(line)}</font>"
++                for line in diagram_lines
++            )
++
++            story += [create_card("Architecture Diagram (Mermaid)", diagram_html), space(16)]
+ 
+         return story
+ 
+-- 
+2.43.0
+
