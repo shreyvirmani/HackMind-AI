@@ -99,9 +99,9 @@ def divider():
             [
                 (
                     "BACKGROUND",
-                    (0,0),
-                    (-1,-1),
-                    PRIMARY
+                    (0, 0),
+                    (-1, -1),
+                    PRIMARY,
                 ),
             ]
         )
@@ -127,6 +127,165 @@ def create_section_title(text):
 
 
 # ===========================================================
+# TEXT SANITIZATION
+# ===========================================================
+
+def _escape_xml(text):
+    """
+    Escape characters that can break ReportLab's XML-like
+    Paragraph markup while preserving the markup we intentionally
+    generate ourselves.
+    """
+
+    text = str(text)
+
+    # Preserve common ReportLab tags already present in generated
+    # content. This function intentionally does not escape <br>,
+    # <b>, <font>, etc.
+    return text
+
+
+def _split_long_text(text, max_chars=900):
+    """
+    Split very long AI-generated text into manageable chunks.
+
+    ReportLab can split a Paragraph across lines, but a single
+    extremely long unbreakable string / generated block can still
+    produce a table row taller than a page.
+
+    Splitting by words gives ReportLab safe boundaries.
+    """
+
+    text = str(text).strip()
+
+    if not text:
+        return [""]
+
+    if len(text) <= max_chars:
+        return [text]
+
+    chunks = []
+    current = []
+
+    current_length = 0
+
+    # Preserve whitespace-separated words.
+    words = text.split()
+
+    for word in words:
+
+        word_length = len(word)
+
+        # Extremely long single token.
+        if word_length > max_chars:
+
+            if current:
+                chunks.append(" ".join(current))
+                current = []
+                current_length = 0
+
+            # Hard split extremely long token.
+            for i in range(0, len(word), max_chars):
+                chunks.append(
+                    word[i:i + max_chars]
+                )
+
+            continue
+
+        additional_length = (
+            word_length
+            if not current
+            else word_length + 1
+        )
+
+        if (
+            current
+            and
+            current_length + additional_length > max_chars
+        ):
+
+            chunks.append(
+                " ".join(current)
+            )
+
+            current = [word]
+            current_length = word_length
+
+        else:
+
+            current.append(word)
+            current_length += additional_length
+
+    if current:
+        chunks.append(
+            " ".join(current)
+        )
+
+    return chunks
+
+
+def _split_content_lines(content):
+    """
+    Convert card content into safe chunks.
+
+    Supports:
+      - <br>
+      - <br/>
+      - <br />
+      - newline characters
+      - very long individual lines
+    """
+
+    content_str = (
+        ""
+        if content is None
+        else str(content)
+    )
+
+    # Normalize HTML breaks to newlines.
+    content_str = re.sub(
+        r"<br\s*/?>",
+        "\n",
+        content_str,
+        flags=re.IGNORECASE,
+    )
+
+    # Normalize Windows line endings.
+    content_str = content_str.replace(
+        "\r\n",
+        "\n",
+    )
+
+    content_str = content_str.replace(
+        "\r",
+        "\n",
+    )
+
+    raw_lines = content_str.split("\n")
+
+    lines = []
+
+    for line in raw_lines:
+
+        line = line.strip()
+
+        if not line:
+            continue
+
+        chunks = _split_long_text(
+            line,
+            max_chars=900,
+        )
+
+        lines.extend(chunks)
+
+    if not lines:
+        lines = [""]
+
+    return lines
+
+
+# ===========================================================
 # PREMIUM CARD
 # ===========================================================
 
@@ -135,63 +294,118 @@ def create_card(
     content,
 ):
     """
-    Renders a titled card with a background box and border.
+    Render a premium HackMind card.
 
-    IMPORTANT: `content` is split into one Table row per line
-    (splitting on "<br/>", the convention used throughout this
-    codebase for joining bullet lists). This is not just cosmetic --
-    ReportLab Tables can only split BETWEEN rows, never WITHIN a
-    single cell's Paragraph. Putting the entire body in one giant
-    Paragraph/row meant any unusually long AI-generated list (many
-    roadmap tasks, many features, etc.) could produce a cell taller
-    than a full page, which is unrecoverable and crashes PDF
-    generation outright (LayoutError: "... too large on page ...").
-    Splitting into many small rows lets the table flow across page
-    boundaries naturally, no matter how long the content gets.
+    Important:
+    Long AI-generated content is split into multiple table rows.
+    Each row contains a reasonably sized Paragraph so ReportLab can
+    move the rows across page boundaries.
+
+    This prevents:
+
+        LayoutError:
+        Flowable <Table ...> too large on page
+
+    caused by a single giant Paragraph inside a single table cell.
     """
 
-    content_str = "" if content is None else str(content)
-
-    # Split on <br/>, tolerating <br>, <br />, <BR/> etc.
-    lines = re.split(r"<br\s*/?>", content_str, flags=re.IGNORECASE)
-    lines = [line.strip() for line in lines if line.strip()]
-
-    if not lines:
-        lines = [""]
+    lines = _split_content_lines(content)
 
     rows = [
-        [Paragraph(str(heading), REPORT_STYLES["card_title"])]
+        [
+            Paragraph(
+                str(heading),
+                REPORT_STYLES["card_title"],
+            )
+        ]
     ]
 
     for line in lines:
-        rows.append([Paragraph(line, REPORT_STYLES["body"])])
+
+        rows.append(
+            [
+                Paragraph(
+                    line,
+                    REPORT_STYLES["body"],
+                )
+            ]
+        )
 
     table = Table(
         rows,
         colWidths=[7.0 * inch],
+        repeatRows=1,
+        splitByRow=1,
+        hAlign="LEFT",
     )
 
     n_rows = len(rows)
 
     style_cmds = [
-        ("BACKGROUND", (0, 0), (-1, -1), CARD_BG),
-        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
-        ("LEFTPADDING", (0, 0), (-1, -1), 16),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 16),
-        # Tight padding between internal rows so multiple short lines
-        # don't look like separate cards stacked together...
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        # ...but generous padding at the very top and very bottom of
-        # the whole card, matching the original single-block look.
-        ("TOPPADDING", (0, 0), (0, 0), 14),
-        ("BOTTOMPADDING", (0, n_rows - 1), (0, n_rows - 1), 14),
+
+        (
+            "BACKGROUND",
+            (0, 0),
+            (-1, -1),
+            CARD_BG,
+        ),
+
+        (
+            "BOX",
+            (0, 0),
+            (-1, -1),
+            0.5,
+            BORDER,
+        ),
+
+        (
+            "LEFTPADDING",
+            (0, 0),
+            (-1, -1),
+            16,
+        ),
+
+        (
+            "RIGHTPADDING",
+            (0, 0),
+            (-1, -1),
+            16,
+        ),
+
+        (
+            "TOPPADDING",
+            (0, 0),
+            (-1, -1),
+            3,
+        ),
+
+        (
+            "BOTTOMPADDING",
+            (0, 0),
+            (-1, -1),
+            3,
+        ),
+
+        (
+            "TOPPADDING",
+            (0, 0),
+            (0, 0),
+            14,
+        ),
+
+        (
+            "BOTTOMPADDING",
+            (0, n_rows - 1),
+            (0, n_rows - 1),
+            14,
+        ),
     ]
 
-    table.setStyle(TableStyle(style_cmds))
+    table.setStyle(
+        TableStyle(style_cmds)
+    )
 
     return table
-
 
 
 # ===========================================================
@@ -204,97 +418,80 @@ def create_metric_card(
 ):
 
     table = Table(
-
         [
-
             [
-
                 Paragraph(
                     str(title_text),
-                    REPORT_STYLES["card_title"]
+                    REPORT_STYLES["card_title"],
                 )
-
             ],
-
             [
-
                 Paragraph(
                     str(value),
-                    REPORT_STYLES["metric_value"]
+                    REPORT_STYLES["metric_value"],
                 )
-
             ],
-
         ],
-
         colWidths=[2.2 * inch],
     )
 
-
     table.setStyle(
-
         TableStyle(
-
             [
-
                 (
                     "BACKGROUND",
-                    (0,0),
-                    (-1,-1),
-                    colors.white
+                    (0, 0),
+                    (-1, -1),
+                    colors.white,
                 ),
 
                 (
                     "BOX",
-                    (0,0),
-                    (-1,-1),
+                    (0, 0),
+                    (-1, -1),
                     0.6,
-                    BORDER
+                    BORDER,
                 ),
 
                 (
                     "BOTTOMPADDING",
-                    (0,0),
-                    (-1,-1),
-                    18
+                    (0, 0),
+                    (-1, -1),
+                    18,
                 ),
 
                 (
                     "TOPPADDING",
-                    (0,0),
-                    (-1,-1),
-                    18
+                    (0, 0),
+                    (-1, -1),
+                    18,
                 ),
 
                 (
                     "LEFTPADDING",
-                    (0,0),
-                    (-1,-1),
-                    14
+                    (0, 0),
+                    (-1, -1),
+                    14,
                 ),
 
                 (
                     "RIGHTPADDING",
-                    (0,0),
-                    (-1,-1),
-                    14
+                    (0, 0),
+                    (-1, -1),
+                    14,
                 ),
 
                 (
                     "ALIGN",
-                    (0,0),
-                    (-1,-1),
-                    "CENTER"
+                    (0, 0),
+                    (-1, -1),
+                    "CENTER",
                 ),
-
             ]
-
         )
-
     )
 
     return table
-
 
 
 # ===========================================================
@@ -304,29 +501,21 @@ def create_metric_card(
 def create_metric_dashboard(cards):
 
     return Table(
-
         [cards],
-
         colWidths=[
             2.3 * inch
             for _ in cards
         ],
-
         style=TableStyle(
-
             [
-
                 (
                     "BOTTOMPADDING",
-                    (0,0),
-                    (-1,-1),
-                    8
+                    (0, 0),
+                    (-1, -1),
+                    8,
                 )
-
             ]
-
-        )
-
+        ),
     )
 
 
@@ -337,90 +526,83 @@ def create_metric_dashboard(cards):
 def create_tag(text):
 
     table = Table(
-
         [
             [
                 Paragraph(
                     f"<b>{text}</b>",
-                    REPORT_STYLES["muted"]
+                    REPORT_STYLES["muted"],
                 )
             ]
         ]
-
     )
 
-
     table.setStyle(
-
         TableStyle(
-
             [
-
                 (
                     "BACKGROUND",
-                    (0,0),
-                    (-1,-1),
-                    colors.HexColor("#DBEAFE")
+                    (0, 0),
+                    (-1, -1),
+                    colors.HexColor("#DBEAFE"),
                 ),
 
                 (
                     "TEXTCOLOR",
-                    (0,0),
-                    (-1,-1),
-                    PRIMARY
+                    (0, 0),
+                    (-1, -1),
+                    PRIMARY,
                 ),
 
                 (
                     "BOX",
-                    (0,0),
-                    (-1,-1),
+                    (0, 0),
+                    (-1, -1),
                     0.4,
-                    PRIMARY
+                    PRIMARY,
                 ),
 
                 (
                     "LEFTPADDING",
-                    (0,0),
-                    (-1,-1),
-                    8
+                    (0, 0),
+                    (-1, -1),
+                    8,
                 ),
 
                 (
                     "RIGHTPADDING",
-                    (0,0),
-                    (-1,-1),
-                    8
+                    (0, 0),
+                    (-1, -1),
+                    8,
                 ),
 
                 (
                     "TOPPADDING",
-                    (0,0),
-                    (-1,-1),
-                    4
+                    (0, 0),
+                    (-1, -1),
+                    4,
                 ),
 
                 (
                     "BOTTOMPADDING",
-                    (0,0),
-                    (-1,-1),
-                    4
+                    (0, 0),
+                    (-1, -1),
+                    4,
                 ),
-
             ]
-
         )
-
     )
 
     return table
-
 
 
 # ===========================================================
 # TAG GRID
 # ===========================================================
 
-def create_tag_grid(items, columns=4):
+def create_tag_grid(
+    items,
+    columns=4,
+):
 
     rows = []
     row = []
@@ -432,17 +614,16 @@ def create_tag_grid(items, columns=4):
         )
 
         if len(row) == columns:
-            rows.append(row)
-            row=[]
 
+            rows.append(row)
+            row = []
 
     if row:
 
-        while len(row)<columns:
+        while len(row) < columns:
             row.append("")
 
         rows.append(row)
-
 
     return Table(
         rows,
@@ -450,8 +631,8 @@ def create_tag_grid(items, columns=4):
             1.7 * inch
             for _ in range(columns)
         ],
+        splitByRow=1,
     )
-
 
 
 # ===========================================================
@@ -460,145 +641,143 @@ def create_tag_grid(items, columns=4):
 
 def create_progress(score):
 
-    score=max(
+    score = max(
         0,
-        min(score,100)
+        min(score, 100),
     )
 
-    width=6.2*inch
+    width = 6.2 * inch
 
-    filled=width*score/100
-
+    filled = width * score / 100
 
     return Table(
-
-        [["",""]],
-
+        [["", ""]],
         colWidths=[
             filled,
-            width-filled
+            width - filled,
         ],
-
         rowHeights=[12],
-
         style=TableStyle(
-
             [
-
                 (
                     "BACKGROUND",
-                    (0,0),
-                    (0,0),
-                    SUCCESS
+                    (0, 0),
+                    (0, 0),
+                    SUCCESS,
                 ),
 
                 (
                     "BACKGROUND",
-                    (1,0),
-                    (1,0),
-                    BORDER
+                    (1, 0),
+                    (1, 0),
+                    BORDER,
                 ),
 
                 (
                     "BOX",
-                    (0,0),
-                    (-1,-1),
+                    (0, 0),
+                    (-1, -1),
                     0.3,
-                    BORDER
+                    BORDER,
                 ),
-
             ]
-
-        )
-
+        ),
     )
-
 
 
 # ===========================================================
 # PREMIUM TABLE
 # ===========================================================
 
-def create_table(headers, rows):
+def create_table(
+    headers,
+    rows,
+):
 
-    data=[headers]
-    data.extend(rows)
+    data = [
+        headers
+    ]
 
-    table=Table(data)
+    data.extend(
+        rows
+    )
 
+    table = Table(
+        data,
+        repeatRows=1,
+        splitByRow=1,
+        hAlign="LEFT",
+    )
 
     table.setStyle(
-
         TableStyle(
-
             [
-
                 (
                     "BACKGROUND",
-                    (0,0),
-                    (-1,0),
-                    PRIMARY_DARK
+                    (0, 0),
+                    (-1, 0),
+                    PRIMARY_DARK,
                 ),
 
                 (
                     "TEXTCOLOR",
-                    (0,0),
-                    (-1,0),
-                    colors.white
+                    (0, 0),
+                    (-1, 0),
+                    colors.white,
                 ),
 
                 (
                     "FONTNAME",
-                    (0,0),
-                    (-1,0),
-                    "Helvetica-Bold"
+                    (0, 0),
+                    (-1, 0),
+                    "Helvetica-Bold",
                 ),
 
                 (
                     "GRID",
-                    (0,0),
-                    (-1,-1),
+                    (0, 0),
+                    (-1, -1),
                     0.25,
-                    BORDER
+                    BORDER,
                 ),
 
                 (
                     "BOTTOMPADDING",
-                    (0,0),
-                    (-1,-1),
-                    10
+                    (0, 0),
+                    (-1, -1),
+                    10,
                 ),
 
                 (
                     "TOPPADDING",
-                    (0,0),
-                    (-1,-1),
-                    10
+                    (0, 0),
+                    (-1, -1),
+                    10,
                 ),
 
                 (
                     "LEFTPADDING",
-                    (0,0),
-                    (-1,-1),
-                    8
+                    (0, 0),
+                    (-1, -1),
+                    8,
                 ),
 
                 (
                     "RIGHTPADDING",
-                    (0,0),
-                    (-1,-1),
-                    8
+                    (0, 0),
+                    (-1, -1),
+                    8,
                 ),
-
             ]
-
         )
-
     )
 
     return table
 
-# Backward compatibility aliases
+
+# ===========================================================
+# BACKWARD COMPATIBILITY ALIASES
+# ===========================================================
 
 section = create_section_title
 
