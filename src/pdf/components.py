@@ -1,5 +1,5 @@
 import re
-import html
+from xml.sax.saxutils import escape as _xml_escape
 
 from reportlab.platypus import (
     Paragraph,
@@ -23,14 +23,58 @@ from src.pdf.styles import (
 
 
 # ===========================================================
-# CONSTANTS
+# TEXT SAFETY
 # ===========================================================
 
-# Keep these deliberately conservative.
-# ReportLab Tables cannot split INSIDE a cell.
-MAX_CARD_CHARS = 500
-MAX_TABLE_CELL_CHARS = 300
-MAX_TEXT_CHUNK_CHARS = 500
+def safe_text(value) -> str:
+    """
+    Escapes a value for safe embedding into ReportLab Paragraph
+    markup (which uses a small XML-like tag language). AI-generated
+    text -- project titles, taglines, feedback, diagram source, etc.
+    -- routinely contains '&', '<', '>' (e.g. "AI & ML Platform",
+    "<Container> component"), which ReportLab's parser reads as the
+    start of a tag/entity rather than literal text. Left unescaped,
+    this either corrupts the rendered output or crashes PDF
+    generation outright with a markup parse error.
+
+    Every place in src/pdf/ that embeds a raw AI-generated string
+    into an f-string destined for a Paragraph should wrap it with
+    this first. Only use this for the raw *values* being inserted --
+    never wrap markup you're intentionally constructing yourself
+    (like the surrounding <b>...</b> or <font>...</font> tags),
+    since escaping those would turn them into literal text instead
+    of formatting.
+    """
+    if value is None:
+        return ""
+    return _xml_escape(str(value))
+
+
+def collapse_ws(html: str) -> str:
+    """
+    Collapses incidental whitespace (including newlines) down to
+    single spaces, WITHOUT touching intentional "<br/>" tags.
+
+    Use this on any multi-line Python f-string template destined for
+    create_card()/Paragraph() -- e.g. a template like:
+
+        f'''
+        <font size="18">
+        <b>{safe_text(title)}</b>
+        </font>
+        '''
+
+    Those newlines only exist for source-code readability; they were
+    never meant to be content row-breaks. create_card() splits its
+    content on "<br/>" to let long content paginate across pages
+    (see its docstring), and a raw newline landing in the middle of
+    a single logical tag would get split apart mid-tag, causing the
+    exact "unclosed tag" parse error this whole escaping effort
+    exists to prevent. Collapse those incidental newlines away with
+    this helper before the template's actual "<br/>" separators (if
+    any) get to do their job.
+    """
+    return re.sub(r"\s+", " ", html).strip()
 
 
 # ===========================================================
@@ -42,470 +86,55 @@ def space(height=12):
 
 
 # ===========================================================
-# SAFE TEXT
-# ===========================================================
-
-def safe_text(value):
-    """
-    Convert arbitrary AI-generated content into safe ReportLab text.
-
-    AI output may contain:
-        **bold**
-        *italic*
-        `code`
-        ```code```
-        <para>
-        <font>
-        HTML
-        Markdown
-        malformed tags
-
-    ReportLab Paragraph is NOT a Markdown parser.
-    """
-
-    if value is None:
-        return ""
-
-    text = str(value)
-
-    # -------------------------------------------------------
-    # Normalize line endings
-    # -------------------------------------------------------
-
-    text = text.replace("\r\n", "\n")
-    text = text.replace("\r", "\n")
-
-    # -------------------------------------------------------
-    # Escape ALL HTML first
-    # -------------------------------------------------------
-
-    text = html.escape(
-        text,
-        quote=False,
-    )
-
-    # -------------------------------------------------------
-    # Remove fenced markdown code markers
-    # -------------------------------------------------------
-
-    text = text.replace("```", "")
-
-    # -------------------------------------------------------
-    # Markdown headings
-    # -------------------------------------------------------
-
-    text = re.sub(
-        r"(?m)^\s*#{1,6}\s+",
-        "",
-        text,
-    )
-
-    # -------------------------------------------------------
-    # Markdown bold
-    # -------------------------------------------------------
-
-    text = re.sub(
-        r"\*\*(.+?)\*\*",
-        r"<b>\1</b>",
-        text,
-        flags=re.DOTALL,
-    )
-
-    text = re.sub(
-        r"__(.+?)__",
-        r"<b>\1</b>",
-        text,
-        flags=re.DOTALL,
-    )
-
-    # -------------------------------------------------------
-    # Markdown italic
-    # -------------------------------------------------------
-
-    text = re.sub(
-        r"(?<!\*)\*([^*\n]+)\*(?!\*)",
-        r"<i>\1</i>",
-        text,
-    )
-
-    # -------------------------------------------------------
-    # Inline code
-    # -------------------------------------------------------
-
-    text = re.sub(
-        r"`([^`\n]+)`",
-        r"<font name='Courier'>\1</font>",
-        text,
-    )
-
-    # -------------------------------------------------------
-    # Markdown bullets
-    # -------------------------------------------------------
-
-    text = re.sub(
-        r"(?m)^\s*[-*+]\s+",
-        "• ",
-        text,
-    )
-
-    # -------------------------------------------------------
-    # Markdown numbered lists
-    # -------------------------------------------------------
-
-    text = re.sub(
-        r"(?m)^\s*(\d+)\.\s+",
-        r"\1. ",
-        text,
-    )
-
-    # -------------------------------------------------------
-    # Remove dangerous ReportLab tags that may have come
-    # from AI-generated content.
-    # -------------------------------------------------------
-
-    text = re.sub(
-        r"</?para\b[^>]*>",
-        "",
-        text,
-        flags=re.IGNORECASE,
-    )
-
-    # Remove all font tags from AI input.
-    # We add our own font tags only when necessary.
-    text = re.sub(
-        r"</?font\b[^>]*>",
-        "",
-        text,
-        flags=re.IGNORECASE,
-    )
-
-    # -------------------------------------------------------
-    # Remove unsupported HTML tags.
-    #
-    # Only these are allowed.
-    # -------------------------------------------------------
-
-    allowed_tags = {
-        "b",
-        "i",
-        "u",
-        "br",
-    }
-
-    def clean_tag(match):
-
-        tag = match.group(0)
-
-        name_match = re.match(
-            r"<\s*/?\s*([a-zA-Z0-9]+)",
-            tag,
-        )
-
-        if not name_match:
-            return ""
-
-        tag_name = (
-            name_match.group(1)
-            .lower()
-        )
-
-        if tag_name in allowed_tags:
-            return tag
-
-        return ""
-
-    text = re.sub(
-        r"<[^>]+>",
-        clean_tag,
-        text,
-    )
-
-    # -------------------------------------------------------
-    # Remove control characters.
-    # -------------------------------------------------------
-
-    text = re.sub(
-        r"[\x00-\x08\x0b\x0c\x0e-\x1f]",
-        "",
-        text,
-    )
-
-    # -------------------------------------------------------
-    # Normalize whitespace.
-    # -------------------------------------------------------
-
-    text = re.sub(
-        r"[ \t]+",
-        " ",
-        text,
-    )
-
-    text = re.sub(
-        r"\n{3,}",
-        "\n\n",
-        text,
-    )
-
-    return text.strip()
-
-
-# ===========================================================
-# HARD TEXT CHUNKING
-# ===========================================================
-
-def hard_split(text, max_chars=MAX_TEXT_CHUNK_CHARS):
-    """
-    Guaranteed hard split.
-
-    Unlike a word-based splitter, this function can NEVER return
-    a chunk larger than max_chars.
-
-    This is important because a single giant AI-generated token
-    can otherwise create a ReportLab cell thousands of points high.
-    """
-
-    if not text:
-        return [""]
-
-    chunks = []
-
-    start = 0
-
-    while start < len(text):
-
-        end = min(
-            start + max_chars,
-            len(text),
-        )
-
-        chunk = text[start:end]
-
-        # Prefer breaking at whitespace.
-        if end < len(text):
-
-            last_space = max(
-                chunk.rfind(" "),
-                chunk.rfind("\n"),
-            )
-
-            if last_space > max_chars * 0.55:
-                end = start + last_space
-                chunk = text[start:end]
-
-        chunk = chunk.strip()
-
-        if chunk:
-            chunks.append(chunk)
-
-        # Guaranteed forward progress.
-        start = max(
-            end,
-            start + 1,
-        )
-
-    return chunks or [""]
-
-
-# ===========================================================
-# SPLIT LONG TEXT
-# ===========================================================
-
-def split_long_text(
-    text,
-    max_chars=MAX_TEXT_CHUNK_CHARS,
-):
-    """
-    Split arbitrary text into guaranteed-safe chunks.
-
-    Every returned chunk is <= max_chars.
-
-    This intentionally uses hard character limits because
-    ReportLab Table cells cannot split vertically.
-    """
-
-    if text is None:
-        return [""]
-
-    text = safe_text(text)
-
-    if not text:
-        return [""]
-
-    # If already small.
-    if len(text) <= max_chars:
-        return [text]
-
-    chunks = []
-
-    # First respect existing line breaks.
-    paragraphs = re.split(
-        r"\n+",
-        text,
-    )
-
-    current = ""
-
-    for paragraph in paragraphs:
-
-        paragraph = paragraph.strip()
-
-        if not paragraph:
-            continue
-
-        # ---------------------------------------------------
-        # If one paragraph is already too large, hard split it.
-        # ---------------------------------------------------
-
-        if len(paragraph) > max_chars:
-
-            # Flush existing content.
-            if current:
-                chunks.extend(
-                    hard_split(
-                        current,
-                        max_chars,
-                    )
-                )
-                current = ""
-
-            chunks.extend(
-                hard_split(
-                    paragraph,
-                    max_chars,
-                )
-            )
-
-            continue
-
-        # ---------------------------------------------------
-        # Add paragraph to current chunk.
-        # ---------------------------------------------------
-
-        candidate = (
-            f"{current}\n{paragraph}"
-            if current
-            else paragraph
-        )
-
-        if len(candidate) <= max_chars:
-
-            current = candidate
-
-        else:
-
-            if current:
-                chunks.append(
-                    current.strip()
-                )
-
-            current = paragraph
-
-    if current:
-        chunks.append(
-            current.strip()
-        )
-
-    # Final safety pass.
-    final_chunks = []
-
-    for chunk in chunks:
-
-        if len(chunk) <= max_chars:
-            final_chunks.append(chunk)
-
-        else:
-            final_chunks.extend(
-                hard_split(
-                    chunk,
-                    max_chars,
-                )
-            )
-
-    return final_chunks or [""]
-
-
-# ===========================================================
-# TABLE CELL SAFETY
-# ===========================================================
-
-def split_table_cell(value):
-
-    if value is None:
-        return ""
-
-    text = safe_text(value)
-
-    if not text:
-        return ""
-
-    chunks = split_long_text(
-        text,
-        MAX_TABLE_CELL_CHARS,
-    )
-
-    # Use explicit breaks inside the cell.
-    return "<br/>".join(chunks)
-
-
-# ===========================================================
 # TYPOGRAPHY
 # ===========================================================
 
 def title(text):
-
     return Paragraph(
         safe_text(text),
-        REPORT_STYLES["cover_title"],
+        REPORT_STYLES["cover_title"]
     )
 
 
 def section_title(text):
-
     return Paragraph(
         safe_text(text),
-        REPORT_STYLES["section_title"],
+        REPORT_STYLES["section_title"]
     )
 
 
 def subsection(text):
-
     return Paragraph(
         safe_text(text),
-        REPORT_STYLES["subsection_title"],
+        REPORT_STYLES["subsection_title"]
     )
 
 
 def body(text):
-
     return Paragraph(
         safe_text(text),
-        REPORT_STYLES["body"],
+        REPORT_STYLES["body"]
     )
 
 
 def muted(text):
-
     return Paragraph(
         safe_text(text),
-        REPORT_STYLES["muted"],
+        REPORT_STYLES["muted"]
     )
 
 
 def bullet(text):
-
     return Paragraph(
         f"• {safe_text(text)}",
-        REPORT_STYLES["bullet"],
+        REPORT_STYLES["bullet"]
     )
 
 
 def code(text):
-
-    safe = safe_text(text)
-
     return Paragraph(
-        f"<font name='Courier'>{safe}</font>",
-        REPORT_STYLES["code"],
+        f"<font face='Courier'>{safe_text(text)}</font>",
+        REPORT_STYLES["code"]
     )
 
 
@@ -526,9 +155,9 @@ def divider():
             [
                 (
                     "BACKGROUND",
-                    (0, 0),
-                    (-1, -1),
-                    PRIMARY,
+                    (0,0),
+                    (-1,-1),
+                    PRIMARY
                 ),
             ]
         )
@@ -562,198 +191,84 @@ def create_card(
     content,
 ):
     """
-    Safe card renderer.
+    Renders a titled card with a background box and border.
 
-    CRITICAL:
-    The card body is divided into MANY table rows.
+    IMPORTANT: `content` is split into one Table row per line,
+    splitting on "<br/>" (the convention used throughout this
+    codebase for joining bullet lists and multi-line content). This
+    is not just cosmetic -- ReportLab Tables can only split BETWEEN
+    rows, never WITHIN a single cell's Paragraph. Putting the entire
+    body in one giant Paragraph/row meant any unusually long
+    AI-generated content (many roadmap tasks, a multi-line diagram
+    definition, etc.) could produce a cell taller than a full page,
+    which is unrecoverable and crashes PDF generation outright
+    (LayoutError: "... too large on page ..."). Splitting into many
+    small rows lets the table flow across page boundaries naturally,
+    no matter how long the content gets.
 
-    ReportLab can split a Table between rows.
-
-    It cannot split a Table cell.
-
-    Therefore we NEVER put the entire AI-generated response
-    inside one table cell.
+    Deliberately does NOT also split on plain "\\n": an earlier
+    version of this function did, as a blanket safety net, but that
+    broke call sites that build their content as a Python multi-line
+    f-string purely for source-code readability (e.g. a template
+    like f"<font>...\\n<b>{x}</b>...\\n</font>") -- those incidental
+    newlines aren't meant to be row breaks, and splitting on them
+    tore a single logical tag apart across separate rows, which is
+    the exact "unclosed tag" parse error this whole mechanism exists
+    to prevent. Any call site with genuinely multi-line/multi-item
+    content (a bullet list, a diagram, several lines) must join it
+    with "<br/>" explicitly -- see architecture.py's diagram handling
+    or any of the "<br/>".join(...) patterns in the section files.
     """
 
-    heading_text = safe_text(heading)
+    content_str = "" if content is None else str(content)
 
-    content_text = (
-        ""
-        if content is None
-        else str(content)
-    )
+    # Escaped automatically and unconditionally, unlike `content`
+    # below: a heading is always meant to be plain display text (a
+    # section label, a phase name, a role name) -- no call site
+    # anywhere in this codebase intentionally puts markup in a
+    # heading, so there's no double-escaping risk here.
+    safe_heading = safe_text(heading)
 
-    # -------------------------------------------------------
-    # Normalize <br> variants.
-    # -------------------------------------------------------
+    # Split on <br/>, tolerating <br>, <br />, <BR/> etc.
+    lines = re.split(r"<br\s*/?>", content_str, flags=re.IGNORECASE)
+    lines = [line.strip() for line in lines if line.strip()]
 
-    content_text = re.sub(
-        r"<br\s*/?>",
-        "\n",
-        content_text,
-        flags=re.IGNORECASE,
-    )
-
-    # Handle escaped breaks.
-    content_text = content_text.replace(
-        "&lt;br/&gt;",
-        "\n",
-    )
-
-    # -------------------------------------------------------
-    # Split body aggressively.
-    # -------------------------------------------------------
-
-    chunks = split_long_text(
-        content_text,
-        MAX_CARD_CHARS,
-    )
-
-    # -------------------------------------------------------
-    # Build rows.
-    # -------------------------------------------------------
+    if not lines:
+        lines = [""]
 
     rows = [
-        [
-            Paragraph(
-                heading_text,
-                REPORT_STYLES["card_title"],
-            )
-        ]
+        [Paragraph(safe_heading, REPORT_STYLES["card_title"])]
     ]
 
-    for chunk in chunks:
-
-        safe_chunk = safe_text(chunk)
-
-        # Newlines become ReportLab breaks.
-        safe_chunk = safe_chunk.replace(
-            "\n",
-            "<br/>",
-        )
-
-        # Extra final protection.
-        if len(safe_chunk) > MAX_CARD_CHARS * 2:
-
-            safe_parts = hard_split(
-                safe_chunk,
-                MAX_CARD_CHARS,
-            )
-
-            for part in safe_parts:
-
-                rows.append(
-                    [
-                        Paragraph(
-                            part,
-                            REPORT_STYLES["body"],
-                        )
-                    ]
-                )
-
-        else:
-
-            rows.append(
-                [
-                    Paragraph(
-                        safe_chunk,
-                        REPORT_STYLES["body"],
-                    )
-                ]
-            )
-
-    # -------------------------------------------------------
-    # IMPORTANT:
-    #
-    # Do NOT use KeepTogether around this Table.
-    #
-    # The table itself must be allowed to split across pages.
-    # -------------------------------------------------------
+    for line in lines:
+        rows.append([Paragraph(line, REPORT_STYLES["body"])])
 
     table = Table(
         rows,
         colWidths=[7.0 * inch],
-        repeatRows=1,
-        splitByRow=1,
-        hAlign="LEFT",
     )
 
     n_rows = len(rows)
 
     style_cmds = [
-
-        (
-            "BACKGROUND",
-            (0, 0),
-            (-1, -1),
-            CARD_BG,
-        ),
-
-        (
-            "BOX",
-            (0, 0),
-            (-1, -1),
-            0.5,
-            BORDER,
-        ),
-
-        (
-            "LEFTPADDING",
-            (0, 0),
-            (-1, -1),
-            16,
-        ),
-
-        (
-            "RIGHTPADDING",
-            (0, 0),
-            (-1, -1),
-            16,
-        ),
-
-        (
-            "TOPPADDING",
-            (0, 0),
-            (-1, -1),
-            4,
-        ),
-
-        (
-            "BOTTOMPADDING",
-            (0, 0),
-            (-1, -1),
-            4,
-        ),
-
-        # Card heading padding.
-        (
-            "TOPPADDING",
-            (0, 0),
-            (0, 0),
-            14,
-        ),
-
-        # Last row padding.
-        (
-            "BOTTOMPADDING",
-            (0, n_rows - 1),
-            (0, n_rows - 1),
-            14,
-        ),
-
-        (
-            "VALIGN",
-            (0, 0),
-            (-1, -1),
-            "TOP",
-        ),
+        ("BACKGROUND", (0, 0), (-1, -1), CARD_BG),
+        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+        ("LEFTPADDING", (0, 0), (-1, -1), 16),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 16),
+        # Tight padding between internal rows so multiple short lines
+        # don't look like separate cards stacked together...
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        # ...but generous padding at the very top and very bottom of
+        # the whole card, matching the original single-block look.
+        ("TOPPADDING", (0, 0), (0, 0), 14),
+        ("BOTTOMPADDING", (0, n_rows - 1), (0, n_rows - 1), 14),
     ]
 
-    table.setStyle(
-        TableStyle(style_cmds)
-    )
+    table.setStyle(TableStyle(style_cmds))
 
     return table
+
 
 
 # ===========================================================
@@ -765,89 +280,98 @@ def create_metric_card(
     value,
 ):
 
-    safe_title = safe_text(
-        title_text
-    )
-
-    safe_value = safe_text(
-        value
-    )
-
     table = Table(
+
         [
+
             [
+
                 Paragraph(
-                    safe_title,
-                    REPORT_STYLES["card_title"],
+                    safe_text(title_text),
+                    REPORT_STYLES["card_title"]
                 )
+
             ],
+
             [
+
                 Paragraph(
-                    safe_value,
-                    REPORT_STYLES["metric_value"],
+                    safe_text(value),
+                    REPORT_STYLES["metric_value"]
                 )
+
             ],
+
         ],
+
         colWidths=[2.2 * inch],
     )
 
+
     table.setStyle(
+
         TableStyle(
+
             [
+
                 (
                     "BACKGROUND",
-                    (0, 0),
-                    (-1, -1),
-                    colors.white,
+                    (0,0),
+                    (-1,-1),
+                    colors.white
                 ),
 
                 (
                     "BOX",
-                    (0, 0),
-                    (-1, -1),
+                    (0,0),
+                    (-1,-1),
                     0.6,
-                    BORDER,
+                    BORDER
                 ),
 
                 (
                     "BOTTOMPADDING",
-                    (0, 0),
-                    (-1, -1),
-                    18,
+                    (0,0),
+                    (-1,-1),
+                    18
                 ),
 
                 (
                     "TOPPADDING",
-                    (0, 0),
-                    (-1, -1),
-                    18,
+                    (0,0),
+                    (-1,-1),
+                    18
                 ),
 
                 (
                     "LEFTPADDING",
-                    (0, 0),
-                    (-1, -1),
-                    14,
+                    (0,0),
+                    (-1,-1),
+                    14
                 ),
 
                 (
                     "RIGHTPADDING",
-                    (0, 0),
-                    (-1, -1),
-                    14,
+                    (0,0),
+                    (-1,-1),
+                    14
                 ),
 
                 (
                     "ALIGN",
-                    (0, 0),
-                    (-1, -1),
-                    "CENTER",
+                    (0,0),
+                    (-1,-1),
+                    "CENTER"
                 ),
+
             ]
+
         )
+
     )
 
     return table
+
 
 
 # ===========================================================
@@ -857,21 +381,29 @@ def create_metric_card(
 def create_metric_dashboard(cards):
 
     return Table(
+
         [cards],
+
         colWidths=[
             2.3 * inch
             for _ in cards
         ],
+
         style=TableStyle(
+
             [
+
                 (
                     "BOTTOMPADDING",
-                    (0, 0),
-                    (-1, -1),
-                    8,
+                    (0,0),
+                    (-1,-1),
+                    8
                 )
+
             ]
-        ),
+
+        )
+
     )
 
 
@@ -881,89 +413,91 @@ def create_metric_dashboard(cards):
 
 def create_tag(text):
 
-    safe = safe_text(text)
-
     table = Table(
+
         [
             [
                 Paragraph(
-                    f"<b>{safe}</b>",
-                    REPORT_STYLES["muted"],
+                    f"<b>{safe_text(text)}</b>",
+                    REPORT_STYLES["muted"]
                 )
             ]
         ]
+
     )
 
+
     table.setStyle(
+
         TableStyle(
+
             [
+
                 (
                     "BACKGROUND",
-                    (0, 0),
-                    (-1, -1),
-                    colors.HexColor("#DBEAFE"),
+                    (0,0),
+                    (-1,-1),
+                    colors.HexColor("#DBEAFE")
                 ),
 
                 (
                     "TEXTCOLOR",
-                    (0, 0),
-                    (-1, -1),
-                    PRIMARY,
+                    (0,0),
+                    (-1,-1),
+                    PRIMARY
                 ),
 
                 (
                     "BOX",
-                    (0, 0),
-                    (-1, -1),
+                    (0,0),
+                    (-1,-1),
                     0.4,
-                    PRIMARY,
+                    PRIMARY
                 ),
 
                 (
                     "LEFTPADDING",
-                    (0, 0),
-                    (-1, -1),
-                    8,
+                    (0,0),
+                    (-1,-1),
+                    8
                 ),
 
                 (
                     "RIGHTPADDING",
-                    (0, 0),
-                    (-1, -1),
-                    8,
+                    (0,0),
+                    (-1,-1),
+                    8
                 ),
 
                 (
                     "TOPPADDING",
-                    (0, 0),
-                    (-1, -1),
-                    4,
+                    (0,0),
+                    (-1,-1),
+                    4
                 ),
 
                 (
                     "BOTTOMPADDING",
-                    (0, 0),
-                    (-1, -1),
-                    4,
+                    (0,0),
+                    (-1,-1),
+                    4
                 ),
+
             ]
+
         )
+
     )
 
     return table
+
 
 
 # ===========================================================
 # TAG GRID
 # ===========================================================
 
-def create_tag_grid(
-    items,
-    columns=4,
-):
-
-    if not items:
-        return Table([[""]])
+def create_tag_grid(items, columns=4):
 
     rows = []
     row = []
@@ -975,16 +509,17 @@ def create_tag_grid(
         )
 
         if len(row) == columns:
-
             rows.append(row)
-            row = []
+            row=[]
+
 
     if row:
 
-        while len(row) < columns:
+        while len(row)<columns:
             row.append("")
 
         rows.append(row)
+
 
     return Table(
         rows,
@@ -995,299 +530,152 @@ def create_tag_grid(
     )
 
 
+
 # ===========================================================
 # PROGRESS BAR
 # ===========================================================
 
 def create_progress(score):
 
-    try:
-        score = float(score)
-
-    except (
-        TypeError,
-        ValueError,
-    ):
-
-        score = 0
-
-    score = max(
+    score=max(
         0,
-        min(score, 100),
+        min(score,100)
     )
 
-    width = 6.2 * inch
+    width=6.2*inch
 
-    # Ensure both columns have a positive width.
-    minimum_width = 0.01 * inch
+    filled=width*score/100
 
-    filled = max(
-        minimum_width,
-        width * score / 100,
-    )
-
-    remaining = max(
-        minimum_width,
-        width - filled,
-    )
 
     return Table(
-        [["", ""]],
+
+        [["",""]],
+
         colWidths=[
             filled,
-            remaining,
+            width-filled
         ],
+
         rowHeights=[12],
+
         style=TableStyle(
+
             [
+
                 (
                     "BACKGROUND",
-                    (0, 0),
-                    (0, 0),
-                    SUCCESS,
+                    (0,0),
+                    (0,0),
+                    SUCCESS
                 ),
 
                 (
                     "BACKGROUND",
-                    (1, 0),
-                    (1, 0),
-                    BORDER,
+                    (1,0),
+                    (1,0),
+                    BORDER
                 ),
 
                 (
                     "BOX",
-                    (0, 0),
-                    (-1, -1),
+                    (0,0),
+                    (-1,-1),
                     0.3,
-                    BORDER,
+                    BORDER
                 ),
+
             ]
-        ),
+
+        )
+
     )
+
 
 
 # ===========================================================
 # PREMIUM TABLE
 # ===========================================================
 
-def create_table(
-    headers,
-    rows,
-):
-    """
-    Safe ReportLab table.
+def create_table(headers, rows):
 
-    Long cells are split into explicit <br/> chunks.
-    Tables are allowed to split between rows.
-    """
+    data=[headers]
+    data.extend(rows)
 
-    if not headers:
-        return Table([[""]])
+    table=Table(data)
 
-    # -------------------------------------------------------
-    # Headers
-    # -------------------------------------------------------
-
-    safe_headers = [
-        safe_text(header)
-        for header in headers
-    ]
-
-    header_row = [
-        Paragraph(
-            header,
-            REPORT_STYLES["body"],
-        )
-        for header in safe_headers
-    ]
-
-    # -------------------------------------------------------
-    # Body rows
-    # -------------------------------------------------------
-
-    safe_rows = []
-
-    for row in rows or []:
-
-        safe_row = []
-
-        for value in row:
-
-            text = split_table_cell(
-                value
-            )
-
-            safe_row.append(
-                Paragraph(
-                    text,
-                    REPORT_STYLES["body"],
-                )
-            )
-
-        # Ensure row has correct number of columns.
-        while len(safe_row) < len(headers):
-
-            safe_row.append(
-                Paragraph(
-                    "",
-                    REPORT_STYLES["body"],
-                )
-            )
-
-        if len(safe_row) > len(headers):
-
-            safe_row = safe_row[
-                :len(headers)
-            ]
-
-        safe_rows.append(
-            safe_row
-        )
-
-    data = [
-        header_row,
-        *safe_rows,
-    ]
-
-    # -------------------------------------------------------
-    # Column widths
-    # -------------------------------------------------------
-
-    column_count = len(headers)
-
-    available_width = 7.0 * inch
-
-    if column_count <= 3:
-
-        width = (
-            available_width
-            / column_count
-        )
-
-        col_widths = [
-            width
-            for _ in range(column_count)
-        ]
-
-    elif column_count == 4:
-
-        col_widths = [
-            1.35 * inch,
-            1.45 * inch,
-            1.55 * inch,
-            2.65 * inch,
-        ]
-
-    elif column_count == 5:
-
-        col_widths = [
-            0.8 * inch,
-            1.0 * inch,
-            1.5 * inch,
-            1.85 * inch,
-            1.85 * inch,
-        ]
-
-    else:
-
-        width = (
-            available_width
-            / column_count
-        )
-
-        col_widths = [
-            width
-            for _ in range(column_count)
-        ]
-
-    # -------------------------------------------------------
-    # Table
-    # -------------------------------------------------------
-
-    table = Table(
-        data,
-        colWidths=col_widths,
-        repeatRows=1,
-        splitByRow=1,
-        hAlign="LEFT",
-    )
 
     table.setStyle(
+
         TableStyle(
+
             [
+
                 (
                     "BACKGROUND",
-                    (0, 0),
-                    (-1, 0),
-                    PRIMARY_DARK,
+                    (0,0),
+                    (-1,0),
+                    PRIMARY_DARK
                 ),
 
                 (
                     "TEXTCOLOR",
-                    (0, 0),
-                    (-1, 0),
-                    colors.white,
+                    (0,0),
+                    (-1,0),
+                    colors.white
                 ),
 
                 (
                     "FONTNAME",
-                    (0, 0),
-                    (-1, 0),
-                    "Helvetica-Bold",
+                    (0,0),
+                    (-1,0),
+                    "Helvetica-Bold"
                 ),
 
                 (
                     "GRID",
-                    (0, 0),
-                    (-1, -1),
+                    (0,0),
+                    (-1,-1),
                     0.25,
-                    BORDER,
-                ),
-
-                (
-                    "VALIGN",
-                    (0, 0),
-                    (-1, -1),
-                    "TOP",
+                    BORDER
                 ),
 
                 (
                     "BOTTOMPADDING",
-                    (0, 0),
-                    (-1, -1),
-                    8,
+                    (0,0),
+                    (-1,-1),
+                    10
                 ),
 
                 (
                     "TOPPADDING",
-                    (0, 0),
-                    (-1, -1),
-                    8,
+                    (0,0),
+                    (-1,-1),
+                    10
                 ),
 
                 (
                     "LEFTPADDING",
-                    (0, 0),
-                    (-1, -1),
-                    6,
+                    (0,0),
+                    (-1,-1),
+                    8
                 ),
 
                 (
                     "RIGHTPADDING",
-                    (0, 0),
-                    (-1, -1),
-                    6,
+                    (0,0),
+                    (-1,-1),
+                    8
                 ),
+
             ]
+
         )
+
     )
 
     return table
 
-
-# ===========================================================
-# BACKWARD COMPATIBILITY ALIASES
-# ===========================================================
+# Backward compatibility aliases
 
 section = create_section_title
 

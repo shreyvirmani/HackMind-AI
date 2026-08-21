@@ -1,4 +1,4 @@
-from src.pdf.components import create_section_title, create_card, create_table, subsection, space
+from src.pdf.components import create_section_title, create_card, create_table, subsection, space, safe_text
 
 
 class ArchitectureSection:
@@ -10,9 +10,9 @@ class ArchitectureSection:
         overview = architecture.get("architecture_overview")
         pattern = architecture.get("architectural_pattern")
         if overview:
-            story += [create_card("Architecture Overview", overview), space(16)]
+            story += [create_card("Architecture Overview", safe_text(overview)), space(16)]
         if pattern:
-            story += [create_card("Architectural Pattern", pattern), space(16)]
+            story += [create_card("Architectural Pattern", safe_text(pattern)), space(16)]
 
         components = architecture.get("components", [])
         if components:
@@ -48,19 +48,29 @@ class ArchitectureSection:
         ]:
             values = architecture.get(key, [])
             if values:
-                text = "<br/>".join(f"&bull; {v}" for v in values)
+                text = "<br/>".join(f"&bull; {safe_text(v)}" for v in values)
                 story += [create_card(title, text), space(16)]
 
         diagram = architecture.get("mermaid_diagram")
-        
         if diagram:
-            story += [
-                create_card(
-                    "Architecture Diagram (Mermaid)",
-                    diagram,
-                ),
-                space(16),
-            ]
+            from xml.sax.saxutils import escape as xml_escape
+
+            # C4/mermaid diagram syntax is full of characters that
+            # are meaningful to ReportLab's Paragraph markup (<<Container>>,
+            # -->, etc.) -- escape each line so they render as literal
+            # text instead of corrupting/being misread as markup tags.
+            # Each line gets its own <font> wrapper (rather than one
+            # wrapper around the whole block) because create_card
+            # splits this content into separate table rows -- a single
+            # wrapper spanning the whole diagram would end up broken
+            # across rows with a dangling, unclosed tag.
+            diagram_lines = diagram.split("\n")
+            diagram_html = "<br/>".join(
+                f"<font name='Courier'>{xml_escape(line)}</font>"
+                for line in diagram_lines
+            )
+
+            story += [create_card("Architecture Diagram (Mermaid)", diagram_html), space(16)]
 
         return story
 

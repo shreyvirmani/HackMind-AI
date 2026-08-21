@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, JSON, DateTime, Float
+from sqlalchemy import Column, Integer, String, JSON, DateTime, Float, Boolean
 from datetime import datetime
 
 from .connection import Base
@@ -241,4 +241,70 @@ class Project(Base):
     created_at = Column(
         DateTime,
         default=datetime.utcnow
+    )
+
+
+class Workflow(Base):
+    """
+    Persisted AI-generation workflow state. This replaces the old
+    in-memory WorkflowRegistry, which broke on serverless platforms
+    (Vercel) because a workflow's `POST /workflow/start` call and its
+    later `POST /workflow/{id}/advance` / `GET /workflow/{id}` calls
+    can each land on a completely different, memory-isolated function
+    instance. Every stage's status AND its output data are persisted
+    here so any instance can pick up exactly where a previous one
+    left off.
+
+    Each of planner/research/architecture/judge/pitch is one of:
+    "waiting" | "running" | "completed" | "failed".
+    """
+
+    __tablename__ = "workflows"
+
+    id = Column(
+        String,
+        primary_key=True,
+        index=True,
+    )  # the workflow_id (uuid4 string)
+
+    user_id = Column(
+        String,
+        nullable=False,
+        index=True,
+    )
+
+    idea = Column(
+        String,
+        nullable=False,
+    )
+
+    planner = Column(String, nullable=False, default="waiting")
+    research = Column(String, nullable=False, default="waiting")
+    architecture = Column(String, nullable=False, default="waiting")
+    judge = Column(String, nullable=False, default="waiting")
+    pitch = Column(String, nullable=False, default="waiting")
+
+    # Raw stage outputs (Pydantic .model_dump() dicts), persisted so
+    # a later stage -- possibly running on a different instance --
+    # can reconstruct the objects it depends on (e.g. architecture
+    # needs the roadmap + research outputs).
+    roadmap_data = Column(JSON, nullable=True)
+    research_data = Column(JSON, nullable=True)
+    architecture_data = Column(JSON, nullable=True)
+    judge_data = Column(JSON, nullable=True)
+    pitch_data = Column(JSON, nullable=True)
+
+    finished = Column(Boolean, nullable=False, default=False)
+    project_id = Column(String, nullable=True)
+    error = Column(String, nullable=True)
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
     )

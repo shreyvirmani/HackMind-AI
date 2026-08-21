@@ -14,6 +14,8 @@ from src.pdf.components import (
     create_metric_card,
     create_metric_dashboard,
     create_progress,
+    safe_text,
+    collapse_ws,
 )
 
 from src.pdf.styles import REPORT_STYLES
@@ -118,23 +120,23 @@ def build_executive_summary(project):
     if title:
 
         hero_parts.append(
-            f"""
+            collapse_ws(f"""
             <font size="18">
-            <b>{title}</b>
+            <b>{safe_text(title)}</b>
             </font>
-            """
+            """)
         )
 
 
     if tagline:
 
         hero_parts.append(
-            f"""
+            collapse_ws(f"""
             <br/><br/>
             <font color="#2563EB">
-            {tagline}
+            {safe_text(tagline)}
             </font>
-            """
+            """)
         )
 
 
@@ -210,7 +212,7 @@ def build_executive_summary(project):
         elements.append(
             create_card(
                 "Problem Statement",
-                problem
+                safe_text(problem)
             )
         )
 
@@ -230,7 +232,7 @@ def build_executive_summary(project):
         elements.append(
             create_card(
                 "Proposed Solution",
-                solution
+                safe_text(solution)
             )
         )
 
@@ -251,7 +253,7 @@ def build_executive_summary(project):
 
             users = "<br/>".join(
                 [
-                    f"• {x}"
+                    f"• {safe_text(x)}"
                     for x in target_users
                 ]
             )
@@ -284,7 +286,7 @@ def build_executive_summary(project):
 
         strength_text = "<br/>".join(
             [
-                f"• {x}"
+                f"• {safe_text(x)}"
                 for x in strengths
             ]
         )
@@ -292,7 +294,7 @@ def build_executive_summary(project):
 
         weakness_text = "<br/>".join(
             [
-                f"• {x}"
+                f"• {safe_text(x)}"
                 for x in weaknesses
             ]
         )
@@ -441,7 +443,7 @@ def build_executive_summary(project):
 
         improvement_text = "<br/>".join(
             [
-                f"→ {x}"
+                f"→ {safe_text(x)}"
                 for x in improvements
             ]
         )
@@ -470,7 +472,7 @@ def build_executive_summary(project):
         elements.append(
             create_card(
                 "HackMind AI Final Verdict",
-                feedback
+                safe_text(feedback)
             )
         )
 

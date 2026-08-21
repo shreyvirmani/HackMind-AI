@@ -1,7 +1,7 @@
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import BaseModel, ValidationError
 
 from src.services.project_service import project_service
@@ -103,7 +103,7 @@ def download_project_pdf(
 
         pdf_generator = PDFGenerator()
 
-        pdf_path = pdf_generator.generate(
+        pdf_buffer = pdf_generator.generate(
             project
         )
 
@@ -151,13 +151,15 @@ def download_project_pdf(
 
 
 
-    return FileResponse(
+    return Response(
 
-        path=str(pdf_path),
+        content=pdf_buffer.getvalue(),
 
         media_type="application/pdf",
 
-        filename=filename
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        },
 
     )
 

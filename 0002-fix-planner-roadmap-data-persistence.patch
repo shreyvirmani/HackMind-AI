@@ -1,0 +1,102 @@
+From c6c95a2201927a907350455de10ac6d0d84bd1f7 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Thu, 20 Aug 2026 18:25:55 +0000
+Subject: [PATCH] Fix: planner stage output was never persisted (roadmap_data
+ column mismatch)
+
+Root cause: WorkflowRepository.save_stage_output() generically wrote
+stage output to a column named f'{stage}_data'. That naming pattern
+matches every stage except planner, whose data column is named
+roadmap_data (not planner_data) since it stores a Roadmap. The
+planner's status column correctly flipped to 'completed', but its
+actual output silently never reached the database -- roadmap_data
+stayed None forever, and the very next stage crashed reconstructing
+it: Roadmap(**None).
+
+Fixes:
+- database/repository.py: explicit stage -> data-column mapping for
+  the one stage where it differs from the f'{stage}_data' pattern.
+- src/services/workflow_runner.py: _next_pending_stage() now treats
+  a stage marked 'completed' with a still-None data column as not
+  actually completed, so it simply re-runs on the next /advance
+  call. This self-heals any workflow row already stuck in the
+  pre-fix broken state -- no manual DB intervention needed, the next
+  /advance call from the frontend's existing retry loop just works.
+
+Verified with a full integration test (real SQLite DB, real
+WorkflowRunner.advance(), mocked LLM controllers): full 5-stage
+sequence completes with no error and project_id set; roadmap_data
+confirmed persisted after the planner stage; a workflow manually
+placed into the exact pre-fix broken state (planner='completed',
+roadmap_data=None) self-heals on its next /advance call.
+---
+ database/repository.py          | 12 +++++++++++-
+ src/services/workflow_runner.py | 19 +++++++++++++++++++
+ 2 files changed, 30 insertions(+), 1 deletion(-)
+
+diff --git a/database/repository.py b/database/repository.py
+index aca3ebc..0fa6a49 100644
+--- a/database/repository.py
++++ b/database/repository.py
+@@ -514,6 +514,14 @@ class WorkflowRepository:
+ 
+         return workflow
+ 
++    # The status column name and the data column name match for
++    # every stage EXCEPT planner: its status column is "planner" but
++    # its output is a Roadmap, stored in "roadmap_data" (a clearer
++    # name than "planner_data" for what the column actually holds).
++    _DATA_COLUMN = {
++        "planner": "roadmap_data",
++    }
++
+     def save_stage_output(
+         self,
+         db: Session,
+@@ -523,8 +531,10 @@ class WorkflowRepository:
+         data: dict,
+     ) -> Workflow:
+ 
++        data_column = self._DATA_COLUMN.get(stage, f"{stage}_data")
++
+         setattr(workflow, stage, status)
+-        setattr(workflow, f"{stage}_data", data)
++        setattr(workflow, data_column, data)
+ 
+         db.commit()
+         db.refresh(workflow)
+diff --git a/src/services/workflow_runner.py b/src/services/workflow_runner.py
+index e2fba0d..844d0eb 100644
+--- a/src/services/workflow_runner.py
++++ b/src/services/workflow_runner.py
+@@ -82,8 +82,27 @@ class WorkflowRunner:
+         finally:
+             db.close()
+ 
++    _STAGE_DATA_COLUMN = {
++        "planner": "roadmap_data",
++        "research": "research_data",
++        "architecture": "architecture_data",
++        "judge": "judge_data",
++        "pitch": "pitch_data",
++    }
++
+     def _next_pending_stage(self, workflow) -> str | None:
+         for stage in STAGE_ORDER:
++            data_column = self._STAGE_DATA_COLUMN[stage]
++
++            # A stage marked "completed" whose output never actually
++            # persisted (e.g. an already-affected row from before a
++            # fix to how stage output gets saved) would otherwise
++            # crash every later stage trying to read None data.
++            # Treat it as not-completed instead, so it simply runs
++            # again on the next /advance call.
++            if getattr(workflow, stage) == "completed" and getattr(workflow, data_column) is None:
++                return stage
++
+             if getattr(workflow, stage) != "completed":
+                 return stage
+         return None
+-- 
+2.43.0
+

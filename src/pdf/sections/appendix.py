@@ -1,4 +1,5 @@
 from src.pdf.components import (
+    safe_text,
     create_section_title,
     create_card,
     create_tag_grid,
@@ -76,7 +77,7 @@ class AppendixSection:
                 future_text = "<br/>".join(
 
                     [
-                        f"→ {item}"
+                        f"→ {safe_text(item)}"
                         for item in future_scope
                     ]
 
@@ -84,7 +85,7 @@ class AppendixSection:
 
             else:
 
-                future_text = str(future_scope)
+                future_text = safe_text(future_scope)
 
 
 
@@ -156,7 +157,7 @@ class AppendixSection:
                 task_text = "<br/>".join(
 
                     [
-                        f"✓ {task}"
+                        f"✓ {safe_text(task)}"
                         for task in tasks
                     ]
 
@@ -224,9 +225,11 @@ class AppendixSection:
                             "Team Role"
                         ),
 
-                        role.get(
-                            "responsibilities",
-                            ""
+                        safe_text(
+                            role.get(
+                                "responsibilities",
+                                ""
+                            )
                         )
 
                     )
@@ -326,7 +329,7 @@ class AppendixSection:
 
                     "System Architecture Documentation",
 
-                    architecture
+                    safe_text(architecture)
 
                 )
 

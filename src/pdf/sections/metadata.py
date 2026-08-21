@@ -1,4 +1,6 @@
 from src.pdf.components import (
+    safe_text,
+    collapse_ws,
     create_section_title,
     create_card,
     create_metric_card,
@@ -119,8 +121,8 @@ class MetadataPage:
 
                 "Project Identity",
 
-                f"""
-                <b>Name:</b> {project.project_title}
+                collapse_ws(f"""
+                <b>Name:</b> {safe_text(project.project_title)}
 
                 <br/><br/>
 
@@ -137,9 +139,9 @@ class MetadataPage:
 
                 <br/>
 
-                {project.idea}
+                {safe_text(project.idea)}
 
-                """
+                """)
 
             )
 
@@ -167,7 +169,7 @@ class MetadataPage:
             feature_text = "<br/>".join(
 
                 [
-                    f"✓ {item}"
+                    f"✓ {safe_text(item)}"
                     for item in features
                 ]
 
@@ -262,7 +264,7 @@ class MetadataPage:
 
                     "System Architecture",
 
-                    architecture
+                    safe_text(architecture)
 
                 )
 
@@ -315,7 +317,7 @@ class MetadataPage:
                 content = "<br/>".join(
 
                     [
-                        f"• {task}"
+                        f"• {safe_text(task)}"
                         for task in tasks
                     ]
 
@@ -384,7 +386,7 @@ class MetadataPage:
 
                         role_name,
 
-                        responsibilities
+                        safe_text(responsibilities)
 
                     )
 

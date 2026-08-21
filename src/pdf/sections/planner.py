@@ -1,4 +1,5 @@
 from src.pdf.components import (
+    safe_text,
     create_section_title,
     create_card,
     create_metric_card,
@@ -132,7 +133,7 @@ class PlannerSection:
 
                 create_card(
                     "Problem Statement",
-                    problem
+                    safe_text(problem)
                 )
 
             )
@@ -159,7 +160,7 @@ class PlannerSection:
 
                 create_card(
                     "Proposed Solution",
-                    solution
+                    safe_text(solution)
                 )
 
             )
@@ -182,7 +183,7 @@ class PlannerSection:
                 user_text = "<br/>".join(
 
                     [
-                        f"✓ {user}"
+                        f"✓ {safe_text(user)}"
                         for user in users
                     ]
 
@@ -220,7 +221,7 @@ class PlannerSection:
             feature_text = "<br/>".join(
 
                 [
-                    f"✓ {feature}"
+                    f"✓ {safe_text(feature)}"
                     for feature in features
                 ]
 
@@ -309,7 +310,7 @@ class PlannerSection:
 
                 create_card(
                     "System Architecture",
-                    architecture
+                    safe_text(architecture)
                 )
 
             )
@@ -357,7 +358,7 @@ class PlannerSection:
                 task_text = "<br/>".join(
 
                     [
-                        f"→ {task}"
+                        f"→ {safe_text(task)}"
                         for task in tasks
                     ]
 
@@ -429,7 +430,7 @@ class PlannerSection:
 
                         create_card(
                             name or "Team Member",
-                            responsibility
+                            safe_text(responsibility)
                         )
 
                     )
@@ -458,7 +459,7 @@ class PlannerSection:
 
                 create_card(
                     "Future Expansion Opportunities",
-                    future
+                    safe_text(future)
                 )
 
             )

@@ -1,4 +1,5 @@
 from src.pdf.components import (
+    safe_text,
     create_section_title,
     create_card,
     space,
@@ -78,14 +79,14 @@ class PitchDeckSection:
 
                 content_text = "<br/>".join(
                     [
-                        f"• {item}"
+                        f"• {safe_text(item)}"
                         for item in content
                     ]
                 )
 
             else:
 
-                content_text = str(content)
+                content_text = safe_text(content)
 
 
 

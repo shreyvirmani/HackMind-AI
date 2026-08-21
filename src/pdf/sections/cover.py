@@ -10,6 +10,7 @@ from reportlab.lib.units import inch
 from reportlab.lib.enums import TA_CENTER
 
 from src.pdf.styles import REPORT_STYLES
+from src.pdf.components import safe_text
 
 
 
@@ -210,7 +211,7 @@ def build_cover_section(project):
 
                     f"""
                     <font color="#FFFFFF">
-                    <b>{project_title}</b>
+                    <b>{safe_text(project_title)}</b>
                     </font>
                     """,
 
