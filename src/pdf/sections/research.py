@@ -1,4 +1,5 @@
 from src.pdf.components import (
+    safe_text,
     create_section_title,
     create_card,
     create_table,
@@ -37,7 +38,7 @@ class ResearchSection:
             story.append(
                 create_card(
                     "Market Overview",
-                    market
+                    safe_text(market)
                 )
             )
 
@@ -64,14 +65,14 @@ class ResearchSection:
 
                 audience_text = "<br/>".join(
                     [
-                        f"✓ {item}"
+                        f"✓ {safe_text(item)}"
                         for item in audience
                     ]
                 )
 
             else:
 
-                audience_text = str(audience)
+                audience_text = safe_text(audience)
 
 
 
@@ -180,14 +181,14 @@ class ResearchSection:
 
                 text = "<br/>".join(
                     [
-                        f"→ {x}"
+                        f"→ {safe_text(x)}"
                         for x in existing
                     ]
                 )
 
             else:
 
-                text = str(existing)
+                text = safe_text(existing)
 
 
             story.append(
@@ -220,7 +221,7 @@ class ResearchSection:
             story.append(
                 create_card(
                     "Identified Market Gap",
-                    gap
+                    safe_text(gap)
                 )
             )
 
@@ -274,14 +275,14 @@ class ResearchSection:
 
                     content = "<br/>".join(
                         [
-                            f"• {x}"
+                            f"• {safe_text(x)}"
                             for x in value
                         ]
                     )
 
                 else:
 
-                    content = str(value)
+                    content = safe_text(value)
 
 
 
@@ -315,7 +316,7 @@ class ResearchSection:
             story.append(
                 create_card(
                     "Business Model",
-                    business
+                    safe_text(business)
                 )
             )
 
@@ -342,7 +343,7 @@ class ResearchSection:
             story.append(
                 create_card(
                     "Revenue Strategy",
-                    revenue
+                    safe_text(revenue)
                 )
             )
 
@@ -370,14 +371,14 @@ class ResearchSection:
 
                 risk_text = "<br/>".join(
                     [
-                        f"⚠ {x}"
+                        f"⚠ {safe_text(x)}"
                         for x in risks
                     ]
                 )
 
             else:
 
-                risk_text = str(risks)
+                risk_text = safe_text(risks)
 
 
 

@@ -1,4 +1,5 @@
 import re
+from xml.sax.saxutils import escape as _xml_escape
 
 from reportlab.platypus import (
     Paragraph,
@@ -22,6 +23,61 @@ from src.pdf.styles import (
 
 
 # ===========================================================
+# TEXT SAFETY
+# ===========================================================
+
+def safe_text(value) -> str:
+    """
+    Escapes a value for safe embedding into ReportLab Paragraph
+    markup (which uses a small XML-like tag language). AI-generated
+    text -- project titles, taglines, feedback, diagram source, etc.
+    -- routinely contains '&', '<', '>' (e.g. "AI & ML Platform",
+    "<Container> component"), which ReportLab's parser reads as the
+    start of a tag/entity rather than literal text. Left unescaped,
+    this either corrupts the rendered output or crashes PDF
+    generation outright with a markup parse error.
+
+    Every place in src/pdf/ that embeds a raw AI-generated string
+    into an f-string destined for a Paragraph should wrap it with
+    this first. Only use this for the raw *values* being inserted --
+    never wrap markup you're intentionally constructing yourself
+    (like the surrounding <b>...</b> or <font>...</font> tags),
+    since escaping those would turn them into literal text instead
+    of formatting.
+    """
+    if value is None:
+        return ""
+    return _xml_escape(str(value))
+
+
+def collapse_ws(html: str) -> str:
+    """
+    Collapses incidental whitespace (including newlines) down to
+    single spaces, WITHOUT touching intentional "<br/>" tags.
+
+    Use this on any multi-line Python f-string template destined for
+    create_card()/Paragraph() -- e.g. a template like:
+
+        f'''
+        <font size="18">
+        <b>{safe_text(title)}</b>
+        </font>
+        '''
+
+    Those newlines only exist for source-code readability; they were
+    never meant to be content row-breaks. create_card() splits its
+    content on "<br/>" to let long content paginate across pages
+    (see its docstring), and a raw newline landing in the middle of
+    a single logical tag would get split apart mid-tag, causing the
+    exact "unclosed tag" parse error this whole escaping effort
+    exists to prevent. Collapse those incidental newlines away with
+    this helper before the template's actual "<br/>" separators (if
+    any) get to do their job.
+    """
+    return re.sub(r"\s+", " ", html).strip()
+
+
+# ===========================================================
 # SPACING
 # ===========================================================
 
@@ -35,49 +91,49 @@ def space(height=12):
 
 def title(text):
     return Paragraph(
-        str(text),
+        safe_text(text),
         REPORT_STYLES["cover_title"]
     )
 
 
 def section_title(text):
     return Paragraph(
-        str(text),
+        safe_text(text),
         REPORT_STYLES["section_title"]
     )
 
 
 def subsection(text):
     return Paragraph(
-        str(text),
+        safe_text(text),
         REPORT_STYLES["subsection_title"]
     )
 
 
 def body(text):
     return Paragraph(
-        str(text),
+        safe_text(text),
         REPORT_STYLES["body"]
     )
 
 
 def muted(text):
     return Paragraph(
-        str(text),
+        safe_text(text),
         REPORT_STYLES["muted"]
     )
 
 
 def bullet(text):
     return Paragraph(
-        f"• {text}",
+        f"• {safe_text(text)}",
         REPORT_STYLES["bullet"]
     )
 
 
 def code(text):
     return Paragraph(
-        f"<font face='Courier'>{text}</font>",
+        f"<font face='Courier'>{safe_text(text)}</font>",
         REPORT_STYLES["code"]
     )
 
@@ -138,9 +194,9 @@ def create_card(
     Renders a titled card with a background box and border.
 
     IMPORTANT: `content` is split into one Table row per line,
-    splitting on EITHER "<br/>" (the convention used throughout this
-    codebase for joining bullet lists) OR a plain newline. This is
-    not just cosmetic -- ReportLab Tables can only split BETWEEN
+    splitting on "<br/>" (the convention used throughout this
+    codebase for joining bullet lists and multi-line content). This
+    is not just cosmetic -- ReportLab Tables can only split BETWEEN
     rows, never WITHIN a single cell's Paragraph. Putting the entire
     body in one giant Paragraph/row meant any unusually long
     AI-generated content (many roadmap tasks, a multi-line diagram
@@ -148,24 +204,40 @@ def create_card(
     which is unrecoverable and crashes PDF generation outright
     (LayoutError: "... too large on page ..."). Splitting into many
     small rows lets the table flow across page boundaries naturally,
-    no matter how long the content gets -- and splitting on plain
-    newlines too (not just <br/>) means this protection applies even
-    to call sites that pass raw multi-line text directly, without
-    remembering to join it with <br/> themselves first.
+    no matter how long the content gets.
+
+    Deliberately does NOT also split on plain "\\n": an earlier
+    version of this function did, as a blanket safety net, but that
+    broke call sites that build their content as a Python multi-line
+    f-string purely for source-code readability (e.g. a template
+    like f"<font>...\\n<b>{x}</b>...\\n</font>") -- those incidental
+    newlines aren't meant to be row breaks, and splitting on them
+    tore a single logical tag apart across separate rows, which is
+    the exact "unclosed tag" parse error this whole mechanism exists
+    to prevent. Any call site with genuinely multi-line/multi-item
+    content (a bullet list, a diagram, several lines) must join it
+    with "<br/>" explicitly -- see architecture.py's diagram handling
+    or any of the "<br/>".join(...) patterns in the section files.
     """
 
     content_str = "" if content is None else str(content)
 
-    # Split on <br/> (tolerating <br>, <br />, <BR/> etc.) OR a
-    # plain newline -- either one starts a new row.
-    lines = re.split(r"<br\s*/?>|\n", content_str, flags=re.IGNORECASE)
+    # Escaped automatically and unconditionally, unlike `content`
+    # below: a heading is always meant to be plain display text (a
+    # section label, a phase name, a role name) -- no call site
+    # anywhere in this codebase intentionally puts markup in a
+    # heading, so there's no double-escaping risk here.
+    safe_heading = safe_text(heading)
+
+    # Split on <br/>, tolerating <br>, <br />, <BR/> etc.
+    lines = re.split(r"<br\s*/?>", content_str, flags=re.IGNORECASE)
     lines = [line.strip() for line in lines if line.strip()]
 
     if not lines:
         lines = [""]
 
     rows = [
-        [Paragraph(str(heading), REPORT_STYLES["card_title"])]
+        [Paragraph(safe_heading, REPORT_STYLES["card_title"])]
     ]
 
     for line in lines:
@@ -215,7 +287,7 @@ def create_metric_card(
             [
 
                 Paragraph(
-                    str(title_text),
+                    safe_text(title_text),
                     REPORT_STYLES["card_title"]
                 )
 
@@ -224,7 +296,7 @@ def create_metric_card(
             [
 
                 Paragraph(
-                    str(value),
+                    safe_text(value),
                     REPORT_STYLES["metric_value"]
                 )
 
@@ -346,7 +418,7 @@ def create_tag(text):
         [
             [
                 Paragraph(
-                    f"<b>{text}</b>",
+                    f"<b>{safe_text(text)}</b>",
                     REPORT_STYLES["muted"]
                 )
             ]

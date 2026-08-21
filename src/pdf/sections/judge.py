@@ -1,4 +1,5 @@
 from src.pdf.components import (
+    safe_text,
     create_section_title,
     create_metric_card,
     create_metric_dashboard,
@@ -124,7 +125,7 @@ class JudgeSection:
 
                 "HackMind AI Final Verdict",
 
-                feedback
+                safe_text(feedback)
 
             )
 
@@ -144,7 +145,7 @@ class JudgeSection:
             strength_text = "<br/>".join(
 
                 [
-                    f"✓ {item}"
+                    f"✓ {safe_text(item)}"
                     for item in strengths
                 ]
 
@@ -172,7 +173,7 @@ class JudgeSection:
             weakness_text = "<br/>".join(
 
                 [
-                    f"⚠ {item}"
+                    f"⚠ {safe_text(item)}"
                     for item in weaknesses
                 ]
 
@@ -206,7 +207,7 @@ class JudgeSection:
             improvement_text = "<br/>".join(
 
                 [
-                    f"→ {item}"
+                    f"→ {safe_text(item)}"
                     for item in improvements
                 ]
 
