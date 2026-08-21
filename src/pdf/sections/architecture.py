@@ -53,7 +53,24 @@ class ArchitectureSection:
 
         diagram = architecture.get("mermaid_diagram")
         if diagram:
-            story += [create_card("Architecture Diagram (Mermaid)", f"<font name='Courier'>{diagram}</font>"), space(16)]
+            from xml.sax.saxutils import escape as xml_escape
+
+            # C4/mermaid diagram syntax is full of characters that
+            # are meaningful to ReportLab's Paragraph markup (<<Container>>,
+            # -->, etc.) -- escape each line so they render as literal
+            # text instead of corrupting/being misread as markup tags.
+            # Each line gets its own <font> wrapper (rather than one
+            # wrapper around the whole block) because create_card
+            # splits this content into separate table rows -- a single
+            # wrapper spanning the whole diagram would end up broken
+            # across rows with a dangling, unclosed tag.
+            diagram_lines = diagram.split("\n")
+            diagram_html = "<br/>".join(
+                f"<font name='Courier'>{xml_escape(line)}</font>"
+                for line in diagram_lines
+            )
+
+            story += [create_card("Architecture Diagram (Mermaid)", diagram_html), space(16)]
 
         return story
 

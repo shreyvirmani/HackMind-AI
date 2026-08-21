@@ -137,23 +137,28 @@ def create_card(
     """
     Renders a titled card with a background box and border.
 
-    IMPORTANT: `content` is split into one Table row per line
-    (splitting on "<br/>", the convention used throughout this
-    codebase for joining bullet lists). This is not just cosmetic --
-    ReportLab Tables can only split BETWEEN rows, never WITHIN a
-    single cell's Paragraph. Putting the entire body in one giant
-    Paragraph/row meant any unusually long AI-generated list (many
-    roadmap tasks, many features, etc.) could produce a cell taller
-    than a full page, which is unrecoverable and crashes PDF
-    generation outright (LayoutError: "... too large on page ...").
-    Splitting into many small rows lets the table flow across page
-    boundaries naturally, no matter how long the content gets.
+    IMPORTANT: `content` is split into one Table row per line,
+    splitting on EITHER "<br/>" (the convention used throughout this
+    codebase for joining bullet lists) OR a plain newline. This is
+    not just cosmetic -- ReportLab Tables can only split BETWEEN
+    rows, never WITHIN a single cell's Paragraph. Putting the entire
+    body in one giant Paragraph/row meant any unusually long
+    AI-generated content (many roadmap tasks, a multi-line diagram
+    definition, etc.) could produce a cell taller than a full page,
+    which is unrecoverable and crashes PDF generation outright
+    (LayoutError: "... too large on page ..."). Splitting into many
+    small rows lets the table flow across page boundaries naturally,
+    no matter how long the content gets -- and splitting on plain
+    newlines too (not just <br/>) means this protection applies even
+    to call sites that pass raw multi-line text directly, without
+    remembering to join it with <br/> themselves first.
     """
 
     content_str = "" if content is None else str(content)
 
-    # Split on <br/>, tolerating <br>, <br />, <BR/> etc.
-    lines = re.split(r"<br\s*/?>", content_str, flags=re.IGNORECASE)
+    # Split on <br/> (tolerating <br>, <br />, <BR/> etc.) OR a
+    # plain newline -- either one starts a new row.
+    lines = re.split(r"<br\s*/?>|\n", content_str, flags=re.IGNORECASE)
     lines = [line.strip() for line in lines if line.strip()]
 
     if not lines:
