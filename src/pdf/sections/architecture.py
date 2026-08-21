@@ -52,8 +52,15 @@ class ArchitectureSection:
                 story += [create_card(title, text), space(16)]
 
         diagram = architecture.get("mermaid_diagram")
+        
         if diagram:
-            story += [create_card("Architecture Diagram (Mermaid)", f"<font name='Courier'>{diagram}</font>"), space(16)]
+            story += [
+                create_card(
+                    "Architecture Diagram (Mermaid)",
+                    diagram,
+                ),
+                space(16),
+            ]
 
         return story
 
