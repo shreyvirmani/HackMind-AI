@@ -49,7 +49,7 @@ class GroqClient:
 
         Args:
             prompt: Prompt to send.
-            model: Groq model name (e.g. "llama-3.3-70b-versatile").
+            model: Groq model name (e.g. "openai/gpt-oss-120b").
 
         Returns:
             Generated text.
@@ -71,6 +71,21 @@ class GroqClient:
                 messages=[
                     {"role": "user", "content": prompt},
                 ],
+                # Groq-specific params, not part of the standard
+                # OpenAI SDK signature -- passed via extra_body since
+                # this client is the openai SDK pointed at Groq's
+                # OpenAI-compatible endpoint, not the native groq
+                # package. GPT-OSS models are reasoning models: without
+                # reasoning_format="hidden", the response can include
+                # visible chain-of-thought text mixed in with the
+                # actual answer, which would break the JSON parsers
+                # downstream expecting a clean response. "low" effort
+                # keeps this fallback provider fast, matching its role
+                # as a quick fallback rather than the primary model.
+                extra_body={
+                    "reasoning_effort": "low",
+                    "reasoning_format": "hidden",
+                },
             )
 
             return response.choices[0].message.content

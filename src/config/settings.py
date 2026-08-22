@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # requests on the one that's already exhausted.
     PRIMARY_MODEL: str = "gemini-2.5-flash"       # Gemini key 1
     SECONDARY_MODEL: str = "gemini-2.5-flash"     # Gemini key 2
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_MODEL: str = "openai/gpt-oss-120b"  # llama-3.3-70b-versatile decommissioned Aug 16, 2026
     TERTIARY_MODEL: str = "gpt-4o-mini"           # only used if OPENAI_API_KEY set
     QUATERNARY_MODEL: str = "claude-sonnet-4-6"   # only used if ANTHROPIC_API_KEY set
 
