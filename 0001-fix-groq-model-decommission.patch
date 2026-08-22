@@ -1,0 +1,84 @@
+From d0e43bd238a7e54713a4fa319f0b283724acbc29 Mon Sep 17 00:00:00 2001
+From: Claude <claude@anthropic.com>
+Date: Sat, 22 Aug 2026 07:13:08 +0000
+Subject: [PATCH] Fix: replace decommissioned Groq Llama 3.3 70B with GPT-OSS
+ 120B
+
+Groq decommissioned llama-3.3-70b-versatile on Aug 16, 2026 -- the
+Groq fallback step in the LLM chain (Gemini key1 -> Gemini key2 ->
+Groq -> OpenAI -> Claude) has been failing every request since then.
+
+- src/config/settings.py: GROQ_MODEL -> "openai/gpt-oss-120b",
+  confirmed as the correct current model ID directly from Groq's own
+  docs (console.groq.com/docs/model/openai/gpt-oss-120b), matching
+  their own decommission-notice recommendation.
+- src/services/groq_client.py: added reasoning_effort="low" and
+  reasoning_format="hidden" via extra_body (Groq-specific params,
+  not part of the standard OpenAI SDK signature this client reuses).
+  GPT-OSS is a reasoning model -- without reasoning_format="hidden",
+  responses can include visible chain-of-thought text mixed into the
+  answer, which would break the JSON parsers every downstream agent
+  relies on getting a clean response from. "low" effort keeps this
+  fallback fast, matching its role as a quick fallback rather than
+  the primary model.
+
+Not live-tested against the real Groq API (would need a real
+GROQ_API_KEY, which I don't have access to) -- model ID and the
+reasoning_format parameter are both confirmed directly from Groq's
+current official documentation, not assumed.
+---
+ src/config/settings.py      |  2 +-
+ src/services/groq_client.py | 17 ++++++++++++++++-
+ 2 files changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/src/config/settings.py b/src/config/settings.py
+index 61df602..d7c0021 100644
+--- a/src/config/settings.py
++++ b/src/config/settings.py
+@@ -33,7 +33,7 @@ class Settings(BaseSettings):
+     # requests on the one that's already exhausted.
+     PRIMARY_MODEL: str = "gemini-2.5-flash"       # Gemini key 1
+     SECONDARY_MODEL: str = "gemini-2.5-flash"     # Gemini key 2
+-    GROQ_MODEL: str = "llama-3.3-70b-versatile"
++    GROQ_MODEL: str = "openai/gpt-oss-120b"  # llama-3.3-70b-versatile decommissioned Aug 16, 2026
+     TERTIARY_MODEL: str = "gpt-4o-mini"           # only used if OPENAI_API_KEY set
+     QUATERNARY_MODEL: str = "claude-sonnet-4-6"   # only used if ANTHROPIC_API_KEY set
+ 
+diff --git a/src/services/groq_client.py b/src/services/groq_client.py
+index c65d2d0..aa63b90 100644
+--- a/src/services/groq_client.py
++++ b/src/services/groq_client.py
+@@ -49,7 +49,7 @@ class GroqClient:
+ 
+         Args:
+             prompt: Prompt to send.
+-            model: Groq model name (e.g. "llama-3.3-70b-versatile").
++            model: Groq model name (e.g. "openai/gpt-oss-120b").
+ 
+         Returns:
+             Generated text.
+@@ -71,6 +71,21 @@ class GroqClient:
+                 messages=[
+                     {"role": "user", "content": prompt},
+                 ],
++                # Groq-specific params, not part of the standard
++                # OpenAI SDK signature -- passed via extra_body since
++                # this client is the openai SDK pointed at Groq's
++                # OpenAI-compatible endpoint, not the native groq
++                # package. GPT-OSS models are reasoning models: without
++                # reasoning_format="hidden", the response can include
++                # visible chain-of-thought text mixed in with the
++                # actual answer, which would break the JSON parsers
++                # downstream expecting a clean response. "low" effort
++                # keeps this fallback provider fast, matching its role
++                # as a quick fallback rather than the primary model.
++                extra_body={
++                    "reasoning_effort": "low",
++                    "reasoning_format": "hidden",
++                },
+             )
+ 
+             return response.choices[0].message.content
+-- 
+2.43.0
+
