@@ -84,8 +84,7 @@ class AppendixSection:
                 )
 
             else:
-
-                future_text = safe_text(future_scope)
+                future_text = safe_text(future_scope).replace("\n", "<br/>")
 
 
 
