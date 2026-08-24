@@ -133,7 +133,7 @@ class PlannerSection:
 
                 create_card(
                     "Problem Statement",
-                    safe_text(problem)
+                    safe_text(problem).replace("\n", "<br/>")
                 )
 
             )
@@ -160,7 +160,7 @@ class PlannerSection:
 
                 create_card(
                     "Proposed Solution",
-                    safe_text(solution)
+                    safe_text(solution).replace("\n", "<br/>")
                 )
 
             )
@@ -191,7 +191,7 @@ class PlannerSection:
 
             else:
 
-                user_text = str(users)
+                user_text = safe_text(str(users)).replace("\n", "<br/>")
 
 
 

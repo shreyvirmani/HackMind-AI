@@ -33,12 +33,16 @@ class ResearchSection:
         )
 
 
-        if isinstance(market, dict) and market:
+        if market:
+            if isinstance(market, dict):
+                market_text = "<br/>".join([f"• {k}: {safe_text(v)}" for k, v in market.items()])
+            else:
+                market_text = safe_text(market).replace("\n", "<br/>")
 
             story.append(
                 create_card(
                     "Market Overview",
-                    safe_text(market)
+                    market_text
                 )
             )
 
@@ -72,7 +76,7 @@ class ResearchSection:
 
             else:
 
-                audience_text = safe_text(audience)
+                audience_text = safe_text(audience).replace("\n", "<br/>")
 
 
 
@@ -188,7 +192,7 @@ class ResearchSection:
 
             else:
 
-                text = safe_text(existing)
+                text = safe_text(existing).replace("\n", "<br/>")
 
 
             story.append(
@@ -378,7 +382,7 @@ class ResearchSection:
 
             else:
 
-                risk_text = safe_text(risks)
+                risk_text = safe_text(risks).replace("\n", "<br/>")
 
 
 

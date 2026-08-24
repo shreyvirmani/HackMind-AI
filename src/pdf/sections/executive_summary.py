@@ -212,13 +212,13 @@ def build_executive_summary(project):
         elements.append(
             create_card(
                 "Problem Statement",
-                safe_text(problem)
+                safe_text(problem).replace("\n", "<br/>")
             )
         )
 
 
         elements.append(
-            Spacer(1,15)
+            Spacer(1, 16)
         )
 
 
@@ -232,7 +232,7 @@ def build_executive_summary(project):
         elements.append(
             create_card(
                 "Proposed Solution",
-                safe_text(solution)
+                safe_text(solution).replace("\n", "<br/>")
             )
         )
 
