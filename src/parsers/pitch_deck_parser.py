@@ -13,9 +13,17 @@ def parse_pitch_deck(response: str) -> PitchDeck:
 
     try:
 
-        from src.parsers.utils import extract_json
-        text = extract_json(response)
-        data = json.loads(text)
+        response = response.strip()
+
+        if response.startswith("```json"):
+            response = response.replace("```json", "", 1)
+
+        if response.endswith("```"):
+            response = response[:-3]
+
+        response = response.strip()
+
+        data = json.loads(response)
 
         return PitchDeck.model_validate(data)
 

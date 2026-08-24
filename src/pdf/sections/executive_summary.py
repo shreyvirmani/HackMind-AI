@@ -260,7 +260,7 @@ def build_executive_summary(project):
 
         else:
 
-            users = str(target_users)
+            users = safe_text(str(target_users))
 
 
         elements.append(

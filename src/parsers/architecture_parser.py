@@ -99,9 +99,15 @@ def _normalise_architecture(payload: dict[str, Any]) -> dict[str, Any]:
 
 def parse_architecture(response: str) -> ArchitectureReport:
     try:
-        from src.parsers.utils import extract_json
-        text = extract_json(response)
-        payload = json.loads(text)
+        text = response.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        elif text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+
+        payload = json.loads(text.strip())
         if not isinstance(payload, dict):
             raise InvalidResponseError("Architecture response must be a JSON object.")
 

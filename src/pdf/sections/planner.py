@@ -191,7 +191,7 @@ class PlannerSection:
 
             else:
 
-                user_text = str(users)
+                user_text = safe_text(str(users))
 
 
 
