@@ -33,7 +33,7 @@ class ResearchSection:
         )
 
 
-        if market:
+        if isinstance(market, dict) and market:
 
             story.append(
                 create_card(
