@@ -26,8 +26,8 @@ def build_executive_summary(project):
 
     elements = []
 
-    roadmap = project.roadmap or {}
-    judge = project.judge or {}
+    roadmap = project.roadmap if isinstance(project.roadmap, dict) else {}
+    judge = project.judge if isinstance(project.judge, dict) else {}
 
     score = judge.get(
         "overall_score",
