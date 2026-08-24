@@ -308,30 +308,27 @@ def build_cover_section(project):
     )
 
 
-    idea_table = Table(
-
+    idea_str = str(idea).strip()
+    idea_rows = [
         [
+            Paragraph(
+                "<b>Startup Vision</b>",
+                REPORT_STYLES["card_title"]
+            )
+        ]
+    ]
 
-            [
-
+    for paragraph in idea_str.split("\n"):
+        if paragraph.strip():
+            idea_rows.append([
                 Paragraph(
-                    "<b>Startup Vision</b>",
-                    REPORT_STYLES["card_title"]
-                )
-
-            ],
-
-
-            [
-
-                Paragraph(
-                    safe_text(idea),
+                    safe_text(paragraph.strip()),
                     REPORT_STYLES["body"]
                 )
+            ])
 
-            ]
-
-        ],
+    idea_table = Table(
+        idea_rows,
 
         colWidths=[
             6.9*inch
