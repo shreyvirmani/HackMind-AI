@@ -323,10 +323,12 @@ def build_cover_section(project):
 
 
             [
+
                 Paragraph(
-                    safe_text(idea),
+                    idea,
                     REPORT_STYLES["body"]
                 )
+
             ]
 
         ],

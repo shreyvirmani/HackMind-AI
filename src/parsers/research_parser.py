@@ -12,17 +12,9 @@ def parse_research(response: str) -> ResearchReport:
     """
 
     try:
-        response = response.strip()
-
-        if response.startswith("```json"):
-            response = response.replace("```json", "", 1)
-
-        if response.endswith("```"):
-            response = response[:-3]
-
-        response = response.strip()
-
-        data = json.loads(response)
+        from src.parsers.utils import extract_json
+        text = extract_json(response)
+        data = json.loads(text)
 
         return ResearchReport.model_validate(data)
 
